@@ -42,7 +42,7 @@ const CARD_TYPES = ["Unit", "Ancient Legend", "Ancient Relic", "Event", "Artifac
 const UNIT_LIKE = ["Unit", "Ancient Legend"]; // have race/class/atk/hp
 
 const DEFAULT_KEYWORDS = [
-  { name: "Guard", desc: "Must be targeted before your non-Guard units. Your wall (Front only)." },
+  { name: "Guard", desc: "Must be targeted before your non-Guard units. (Front line only)" },
   { name: "Reach", desc: "May attack the enemy Back rank directly." },
   { name: "Aerial", desc: "Only enemy Aerial or Reach units can intercept it." },
   { name: "Ranged", desc: "Deals damage without suffering retaliation." },
@@ -57,6 +57,8 @@ const DEFAULT_KEYWORDS = [
   { name: "Siege", desc: "Overspill from this unit hits the enemy Party at FULL value (not halved); if unblocked, full Attack to the Party." },
   { name: "Frontline", desc: "This unit fights in the front rank and can be targeted by attackers." },
   { name: "Backline", desc: "This unit is protected while you control a Frontline unit." },
+  { name: "Taunt", desc: "Attacker decides the defense's blocker unit (only 1)." },
+  { name: "Faith", desc: "Unit or Artifact with holy origin or class." },
 ];
 
 const STORAGE_KEY = "projectdd_cards_v1";
@@ -75,6 +77,45 @@ function blankCard(type) {
     text: "", flavor: "",
   };
 }
+
+// Starter cards mirroring the reference spreadsheet (shown only on first run;
+// delete them freely — your changes auto-save).
+const SEED_CARDS = [
+  {
+    ...blankCard("Unit"),
+    name: "Julius XI, Grand General", provisions: "4", mana: "0",
+    race: "Human", klass: "Paladin", position: "Frontline", rarity: "Legendary",
+    keywords: ["Guard", "Swift"], attack: "3", health: "6", strike: "Deal 3.",
+    abilities: [
+      "Preach - 2 Mana - Empowers one friendly Human unit. (Per Turn)",
+      "Crusader Strike - 1 Prov 1 Mana - Imbues Julius XI's blade with holy power, dealing 3 damage and 1 burn damage for 2 turns (does not stack).",
+    ],
+  },
+  {
+    ...blankCard("Ancient Legend"),
+    name: "Example Legend :P", provisions: "5", mana: "0",
+    race: "Human", klass: "Paladin", position: "Frontline", rarity: "Legendary",
+    keywords: ["Guard", "Rally X"], attack: "0", health: "8",
+    abilities: ["Banner (P2): ally units of the Faith (Clerics and Paladins) gain a +0/+1 counter."],
+    passive: "Your party may include 2\u20134 Tribes with no Tension.",
+  },
+  {
+    ...blankCard("Ancient Relic"),
+    name: "Oathkeeper Reliquary", provisions: "5", mana: "5", rarity: "Legendary",
+    keywords: ["Faith"],
+    text: "Cannot be destroyed. Allied units of the Faith have Mending; extend the Cemetery revival window by 1 turn.",
+  },
+  {
+    ...blankCard("Event"),
+    name: "Firestorm", provisions: "0", mana: "4", rarity: "Rare",
+    text: "Deal 4 Party Damage, or 4 to a unit.", flavor: "The sky exhales.",
+  },
+  {
+    ...blankCard("Artifact"),
+    name: "Vanguard Banner", provisions: "3", mana: "0", rarity: "Uncommon",
+    text: "Your units' overspill is +1 before halving.",
+  },
+];
 
 // ---- small UI helpers -----------------------------------------------------
 const Label = ({ children }) => (
@@ -404,6 +445,8 @@ export default function Page() {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed.cards)) setCards(parsed.cards);
         if (Array.isArray(parsed.keywords) && parsed.keywords.length) setKeywords(parsed.keywords);
+      } else {
+        setCards(SEED_CARDS); // first run: show the reference examples
       }
     } catch (e) { /* ignore */ }
     loaded.current = true;
