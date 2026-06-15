@@ -50,9 +50,10 @@ function CardTile({ card, canEdit, onEdit, onDelete }) {
   const subtitle = unitLike
     ? [card.race && card.klass ? `${card.race} ${card.klass}` : (card.race || card.klass), card.position, card.rarity].filter(Boolean).join("  \u00b7  ")
     : `${card.type}  \u00b7  ${card.rarity}`;
+  const hasActiveAbilities = !unitLike && (card.type === "Artifact" || card.type === "Ancient Relic");
   const bodyLines = unitLike
     ? [card.strike ? `Strike: ${card.strike}` : "", ...(card.abilities || []).map(abilityLine).filter(Boolean).map((a) => `\u2022 ${a}`), card.passive ? `Passive: ${card.passive}` : ""].filter(Boolean)
-    : (card.text ? [card.text] : []);
+    : [...(card.text ? [card.text] : []), ...(hasActiveAbilities ? (card.abilities || []).map(abilityLine).filter(Boolean).map((a) => `\u2022 ${a}`) : [])];
   return (
     <div className="group relative w-[260px] rounded-xl border border-neutral-700 bg-neutral-900 shadow-lg overflow-hidden flex flex-col">
       <div className="flex items-center justify-between gap-2 px-3 py-2" style={{ background: "#3b2d52" }}>
@@ -158,6 +159,22 @@ function Editor({ draft, setDraft, keywords, onAddKeyword, onSave, onCancel, sav
             {!unitLike && (
               <>
                 <div><Label>Card Text {draft.type === "Event" ? "(effect)" : "(passive / persistent effect)"}</Label><textarea className={inputCls} rows={4} value={draft.text} onChange={(e) => set({ text: e.target.value })} placeholder="Deal 4 Party Damage, or 4 to a unit." /></div>
+                {(draft.type === "Artifact" || draft.type === "Ancient Relic") && (
+                  <div>
+                    <Label>Active Abilities (Prov / Mana cost + effect)</Label>
+                    <div className="space-y-2">
+                      {(draft.abilities || []).map((ab, i) => (
+                        <div key={i} className="flex gap-2 items-center">
+                          <input className={inputCls + " w-12 text-center px-1"} value={ab.prov} onChange={(e) => setAbility(i, "prov", e.target.value)} placeholder="P" inputMode="numeric" title="Provisions cost" />
+                          <input className={inputCls + " w-12 text-center px-1"} value={ab.mana} onChange={(e) => setAbility(i, "mana", e.target.value)} placeholder="M" inputMode="numeric" title="Mana cost" />
+                          <textarea className={inputCls + " resize-none overflow-hidden transition-all duration-200 leading-snug"} rows={1} value={ab.text} onChange={(e) => { setAbility(i, "text", e.target.value); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} onFocus={(e) => { e.target.style.height = "auto"; e.target.style.height = Math.max(e.target.scrollHeight, 72) + "px"; }} onBlur={(e) => { if (!ab.text) e.target.style.height = ""; }} placeholder={`Active ability ${i + 1} — e.g. Activate: deal 2 to a unit.`} style={{ minHeight: "2.25rem" }} />
+                          <button onClick={() => set({ abilities: draft.abilities.filter((_, x) => x !== i) })} className="shrink-0 px-2 rounded-md bg-neutral-700 hover:bg-rose-700 text-white text-sm">✕</button>
+                        </div>
+                      ))}
+                      <button onClick={() => set({ abilities: [...(draft.abilities || []), { prov: "", mana: "", text: "" }] })} className="text-xs text-amber-300 border border-amber-500/40 rounded px-2 py-1 hover:bg-amber-500/10">+ Add active ability</button>
+                    </div>
+                  </div>
+                )}
                 {draft.type === "Ancient Relic" && (
                   <div>
                     <Label>Race / Tribe Compatibility (click to toggle)</Label>
