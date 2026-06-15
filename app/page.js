@@ -521,8 +521,11 @@ function RulebookModal({ onClose }) {
         </aside>
         {/* content */}
         <div ref={contentRef} className="flex-1 overflow-y-auto p-8 rulebook-content" dangerouslySetInnerHTML={{ __html: html }} />
-        {/* close */}
-        <button onClick={onClose} className="absolute top-3 right-3 text-neutral-400 hover:text-white text-xl leading-none">✕</button>
+        {/* top-right controls */}
+        <div className="absolute top-3 right-3 flex items-center gap-2 group/bar">
+          <a href="/rulebook.docx" download className="opacity-0 group-hover/bar:opacity-100 transition-opacity duration-150 text-xs px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 text-neutral-300 hover:text-white backdrop-blur-sm whitespace-nowrap">Download Rulebook</a>
+          <button onClick={onClose} className="text-neutral-400 hover:text-white text-xl leading-none">✕</button>
+        </div>
       </div>
     </div>
   );
