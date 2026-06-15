@@ -351,6 +351,9 @@ function RulebookModal({ onClose }) {
   const [sections, setSections] = useState([]);
   const [active, setActive] = useState(null);
   const contentRef = useRef(null);
+  const sidebarRef = useRef(null);
+  const isUserScrolling = useRef(false);
+  const scrollTimer = useRef(null);
 
   useEffect(() => {
     fetch("/api/rulebook")
@@ -362,7 +365,47 @@ function RulebookModal({ onClose }) {
       });
   }, []);
 
+  // Set up IntersectionObserver after html is injected into the DOM
+  useEffect(() => {
+    if (!html || !contentRef.current) return;
+    const container = contentRef.current;
+    const headings = container.querySelectorAll("h1,h2,h3");
+    if (!headings.length) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (isUserScrolling.current) return;
+        // Find the topmost heading that is currently intersecting
+        let topEntry = null;
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            if (!topEntry || entry.boundingClientRect.top < topEntry.boundingClientRect.top) {
+              topEntry = entry;
+            }
+          }
+        }
+        if (topEntry) setActive(topEntry.target.textContent.trim());
+      },
+      { root: container, rootMargin: "0px 0px -80% 0px", threshold: 0 }
+    );
+
+    headings.forEach((h) => observer.observe(h));
+    return () => observer.disconnect();
+  }, [html]);
+
+  // Auto-scroll the TOC sidebar to keep active item visible
+  useEffect(() => {
+    if (!active || !sidebarRef.current) return;
+    const btn = sidebarRef.current.querySelector(`[data-section="${CSS.escape(active)}"]`);
+    if (btn) btn.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }, [active]);
+
   function scrollTo(text) {
+    // Suppress observer updates while the programmatic scroll plays out
+    isUserScrolling.current = true;
+    clearTimeout(scrollTimer.current);
+    scrollTimer.current = setTimeout(() => { isUserScrolling.current = false; }, 800);
+
     setActive(text);
     if (!contentRef.current) return;
     const headings = contentRef.current.querySelectorAll("h1,h2,h3");
@@ -378,11 +421,12 @@ function RulebookModal({ onClose }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={onClose}>
       <div className="relative flex w-full max-w-5xl h-[85vh] rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
         {/* sidebar */}
-        <aside className="w-56 shrink-0 border-r border-neutral-800 overflow-y-auto p-3 space-y-0.5">
+        <aside ref={sidebarRef} className="w-56 shrink-0 border-r border-neutral-800 overflow-y-auto p-3 space-y-0.5">
           <p className="text-[10px] uppercase tracking-widest text-neutral-500 px-2 pb-2">Sections</p>
           {sections.map((s) => (
             <button
               key={s.text}
+              data-section={s.text}
               onClick={() => scrollTo(s.text)}
               className={"w-full text-left rounded px-2 py-1.5 text-sm transition " +
                 (s.level === 1 ? "font-semibold " : s.level === 2 ? "pl-4 " : "pl-6 text-xs ") +
