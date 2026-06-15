@@ -39,7 +39,7 @@ const UNIT_LIKE = ["Unit", "Ancient Legend"];
 const uid = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : "id-" + Date.now() + "-" + Math.random().toString(36).slice(2);
 function blankCard(type) {
-  return { id: uid(), type, name: "", provisions: "", mana: "", rarity: "Common", race: "", klass: "", position: "Frontline", keywords: [], attack: "", health: "", strike: "", abilities: [], passive: "", text: "", flavor: "" };
+  return { id: uid(), type, name: "", provisions: "", mana: "", rarity: "Common", race: "", klass: "", position: "Frontline", keywords: [], attack: "", health: "", strike: "", abilities: [], passive: "", text: "", flavor: "", author: "", tribes: [] };
 }
 // Abilities are { prov, mana, text }. Older cards stored them as plain strings;
 // normalize on load and render either shape.
@@ -85,12 +85,16 @@ function CardTile({ card, canEdit, onEdit, onDelete }) {
         {bodyLines.length ? bodyLines.map((l, i) => <div key={i}>{l}</div>) : <div className="text-neutral-600">No rules text yet.</div>}
       </div>
       {card.flavor && <div className="px-3 pb-2 text-[11px] italic text-neutral-400">&ldquo;{card.flavor}&rdquo;</div>}
+      {card.tribes && card.tribes.length > 0 && (
+        <div className="px-3 pb-1.5 flex flex-wrap gap-1">{card.tribes.map((t) => <span key={t} className="text-[10px] text-violet-300 border border-violet-500/40 rounded px-1.5 py-0.5">{t}</span>)}</div>
+      )}
       {unitLike && (
         <div className="grid grid-cols-2 text-center text-sm font-bold border-t border-neutral-700 bg-neutral-800/60">
           <div className="py-1 text-rose-300">ATK {card.attack || 0}</div>
           <div className="py-1 text-emerald-300 border-l border-neutral-700">HP {card.health || 0}</div>
         </div>
       )}
+      {card.author && <div className="px-3 py-1 text-[10px] text-neutral-500 border-t border-neutral-800 text-right">by {card.author}</div>}
       {canEdit && (
         <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition">
           <button onClick={onEdit} className="text-[11px] bg-neutral-700 hover:bg-neutral-600 text-white rounded px-2 py-0.5">Edit</button>
@@ -102,10 +106,12 @@ function CardTile({ card, canEdit, onEdit, onDelete }) {
 }
 
 // ---- editor modal ---------------------------------------------------------
-function Editor({ draft, setDraft, keywords, onAddKeyword, onSave, onCancel, saving }) {
+function Editor({ draft, setDraft, keywords, onAddKeyword, onSave, onCancel, saving, users }) {
   const unitLike = UNIT_LIKE.includes(draft.type);
+  const isCompanion = draft.type === "Ancient Legend";
   const classOptions = draft.race ? RACE_CLASSES[draft.race] || [] : [];
   const set = (patch) => setDraft({ ...draft, ...patch });
+  const toggleTribe = (t) => set({ tribes: (draft.tribes || []).includes(t) ? (draft.tribes || []).filter((x) => x !== t) : [...(draft.tribes || []), t] });
   const toggleKeyword = (k) => set({ keywords: draft.keywords.includes(k) ? draft.keywords.filter((x) => x !== k) : [...draft.keywords, k] });
   const setAbility = (i, field, val) => { const a = [...draft.abilities]; a[i] = { ...a[i], [field]: val }; set({ abilities: a }); };
   const [newKw, setNewKw] = useState("");
@@ -152,12 +158,37 @@ function Editor({ draft, setDraft, keywords, onAddKeyword, onSave, onCancel, sav
                   </div>
                 </div>
                 <div><Label>Passive text</Label><textarea className={inputCls} rows={2} value={draft.passive} onChange={(e) => set({ passive: e.target.value })} placeholder="Takes 1 less combat damage while you control another Dwarf." /></div>
+                {isCompanion && (
+                  <div>
+                    <Label>Race / Tribe Compatibility (click to toggle)</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {RACES.map((r) => {
+                        const on = (draft.tribes || []).includes(r);
+                        return <button key={r} type="button" onClick={() => toggleTribe(r)} className={"text-[11px] rounded px-2 py-1 border transition " + (on ? "bg-violet-500/20 border-violet-400 text-violet-200" : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:border-neutral-500")}>{r}</button>;
+                      })}
+                    </div>
+                  </div>
+                )}
               </>
             )}
             {!unitLike && (
-              <div><Label>Card Text {draft.type === "Event" ? "(effect)" : "(passive / persistent effect)"}</Label><textarea className={inputCls} rows={4} value={draft.text} onChange={(e) => set({ text: e.target.value })} placeholder="Deal 4 Party Damage, or 4 to a unit." /></div>
+              <>
+                <div><Label>Card Text {draft.type === "Event" ? "(effect)" : "(passive / persistent effect)"}</Label><textarea className={inputCls} rows={4} value={draft.text} onChange={(e) => set({ text: e.target.value })} placeholder="Deal 4 Party Damage, or 4 to a unit." /></div>
+                {draft.type === "Ancient Relic" && (
+                  <div>
+                    <Label>Race / Tribe Compatibility (click to toggle)</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {RACES.map((r) => {
+                        const on = (draft.tribes || []).includes(r);
+                        return <button key={r} type="button" onClick={() => toggleTribe(r)} className={"text-[11px] rounded px-2 py-1 border transition " + (on ? "bg-violet-500/20 border-violet-400 text-violet-200" : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:border-neutral-500")}>{r}</button>;
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
             <div><Label>Flavor text</Label><textarea className={inputCls} rows={2} value={draft.flavor} onChange={(e) => set({ flavor: e.target.value })} placeholder="A shield is a promise kept with your body." /></div>
+            <Select label="Authored by" value={draft.author || ""} onChange={(v) => set({ author: v })} options={users || []} placeholder="— select author —" />
             <div>
               <Label>Keywords (click to toggle)</Label>
               <div className="flex flex-wrap gap-1.5">
@@ -374,6 +405,7 @@ function RulebookModal({ onClose }) {
 export default function Page() {
   const [cards, setCards] = useState([]);
   const [keywords, setKeywords] = useState([]);
+  const [users, setUsers] = useState([]);
   const [view, setView] = useState("Unit");
   const [rulebookOpen, setRulebookOpen] = useState(false);
   const [draft, setDraft] = useState(null);
@@ -399,6 +431,7 @@ export default function Page() {
       setBackendError(false);
       setCards(d.cards || []);
       setKeywords(d.keywords || []);
+      setUsers(d.users || []);
     } catch (e) { /* offline; keep what we have */ }
   };
 
@@ -543,7 +576,7 @@ export default function Page() {
         )}
       </main>
 
-      {draft && <Editor draft={draft} setDraft={setDraft} keywords={keywords} onAddKeyword={addKeyword} onSave={saveDraft} onCancel={() => setDraft(null)} saving={saving} />}
+      {draft && <Editor draft={draft} setDraft={setDraft} keywords={keywords} onAddKeyword={addKeyword} onSave={saveDraft} onCancel={() => setDraft(null)} saving={saving} users={users} />}
       {rulebookOpen && <RulebookModal onClose={() => setRulebookOpen(false)} />}
     </div>
   );
