@@ -314,11 +314,68 @@ function AdminView() {
   );
 }
 
+// ---- rulebook modal --------------------------------------------------------
+function RulebookModal({ onClose }) {
+  const [html, setHtml] = useState("");
+  const [sections, setSections] = useState([]);
+  const [active, setActive] = useState(null);
+  const contentRef = useRef(null);
+
+  useEffect(() => {
+    fetch("/api/rulebook")
+      .then((r) => r.json())
+      .then(({ html, sections }) => {
+        setHtml(html || "");
+        setSections(sections || []);
+        if (sections?.length) setActive(sections[0].text);
+      });
+  }, []);
+
+  function scrollTo(text) {
+    setActive(text);
+    if (!contentRef.current) return;
+    const headings = contentRef.current.querySelectorAll("h1,h2,h3");
+    for (const h of headings) {
+      if (h.textContent.trim() === text) {
+        h.scrollIntoView({ behavior: "smooth", block: "start" });
+        break;
+      }
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={onClose}>
+      <div className="relative flex w-full max-w-5xl h-[85vh] rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        {/* sidebar */}
+        <aside className="w-56 shrink-0 border-r border-neutral-800 overflow-y-auto p-3 space-y-0.5">
+          <p className="text-[10px] uppercase tracking-widest text-neutral-500 px-2 pb-2">Sections</p>
+          {sections.map((s) => (
+            <button
+              key={s.text}
+              onClick={() => scrollTo(s.text)}
+              className={"w-full text-left rounded px-2 py-1.5 text-sm transition " +
+                (s.level === 1 ? "font-semibold " : s.level === 2 ? "pl-4 " : "pl-6 text-xs ") +
+                (active === s.text ? "bg-amber-600/20 text-amber-200" : "text-neutral-400 hover:text-white hover:bg-neutral-800")}
+            >
+              {s.text}
+            </button>
+          ))}
+        </aside>
+        {/* content */}
+        <div ref={contentRef} className="flex-1 overflow-y-auto p-8 rulebook-content" dangerouslySetInnerHTML={{ __html: html }} />
+        {/* close */}
+        <button onClick={onClose} className="absolute top-3 right-3 text-neutral-400 hover:text-white text-xl leading-none">✕</button>
+      </div>
+    </div>
+  );
+}
+
 // ---- main page ------------------------------------------------------------
 export default function Page() {
   const [cards, setCards] = useState([]);
   const [keywords, setKeywords] = useState([]);
   const [view, setView] = useState("Unit");
+  const [rulebookOpen, setRulebookOpen] = useState(false);
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
@@ -447,7 +504,7 @@ export default function Page() {
         {["Keywords", "Lore", "Admin"].map((t) => (
           <button key={t} onClick={() => setView(t)} className={"rounded-md px-3 py-2 text-sm text-left transition " + (view === t ? "bg-violet-800/40 text-amber-200 border border-violet-600/50" : "hover:bg-neutral-800 text-neutral-300")}>{t}</button>
         ))}
-        <a href="/rulebook.docx" download className="rounded-md px-3 py-2 text-sm text-left transition hover:bg-neutral-800 text-neutral-300">Draft Rulebook</a>
+        <button onClick={() => setRulebookOpen(true)} className="rounded-md px-3 py-2 text-sm text-left transition hover:bg-neutral-800 text-neutral-300">Draft Rulebook</button>
 
         <div className="mt-auto pt-4 space-y-2">
           <button onClick={exportJSON} className="w-full rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-3 py-2 text-sm">⬇ Export JSON</button>
@@ -487,6 +544,7 @@ export default function Page() {
       </main>
 
       {draft && <Editor draft={draft} setDraft={setDraft} keywords={keywords} onAddKeyword={addKeyword} onSave={saveDraft} onCancel={() => setDraft(null)} saving={saving} />}
+      {rulebookOpen && <RulebookModal onClose={() => setRulebookOpen(false)} />}
     </div>
   );
 }
