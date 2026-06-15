@@ -365,32 +365,28 @@ function RulebookModal({ onClose }) {
       });
   }, []);
 
-  // Set up IntersectionObserver after html is injected into the DOM
+  // Scroll spy: on every scroll event find the last heading above the top ~20% of the container
   useEffect(() => {
     if (!html || !contentRef.current) return;
     const container = contentRef.current;
-    const headings = container.querySelectorAll("h1,h2,h3");
-    if (!headings.length) return;
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (isUserScrolling.current) return;
-        // Find the topmost heading that is currently intersecting
-        let topEntry = null;
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            if (!topEntry || entry.boundingClientRect.top < topEntry.boundingClientRect.top) {
-              topEntry = entry;
-            }
-          }
-        }
-        if (topEntry) setActive(topEntry.target.textContent.trim());
-      },
-      { root: container, rootMargin: "0px 0px -80% 0px", threshold: 0 }
-    );
+    const onScroll = () => {
+      if (isUserScrolling.current) return;
+      const headings = Array.from(container.querySelectorAll("h1,h2,h3"));
+      if (!headings.length) return;
+      const cutoff = container.getBoundingClientRect().top + 40;
+      let current = headings[0];
+      for (const h of headings) {
+        if (h.getBoundingClientRect().top <= cutoff) current = h;
+        else break;
+      }
+      setActive(current.textContent.trim());
+    };
 
-    headings.forEach((h) => observer.observe(h));
-    return () => observer.disconnect();
+    container.addEventListener("scroll", onScroll, { passive: true });
+    // run once immediately so the first section is highlighted on open
+    onScroll();
+    return () => container.removeEventListener("scroll", onScroll);
   }, [html]);
 
   // Auto-scroll the TOC sidebar to keep active item visible
