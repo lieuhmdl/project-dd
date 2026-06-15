@@ -654,7 +654,7 @@ export default function Page() {
           ) : (
             <div className="space-y-1.5">
               <input className={inputCls + " text-xs py-1"} value={username} onChange={(e) => setUsername(e.target.value)} placeholder="username" />
-              <input className={inputCls + " text-xs py-1"} type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="shared token" />
+              <input className={inputCls + " text-xs py-1"} type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Password" />
               <button onClick={signIn} className="w-full rounded bg-amber-600 hover:bg-amber-500 text-black text-xs font-semibold py-1">Sign in to edit</button>
               {signError && <p className="text-rose-400 text-[10px]">{signError}</p>}
             </div>
