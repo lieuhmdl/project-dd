@@ -41,6 +41,16 @@ const uid = () =>
 function blankCard(type) {
   return { id: uid(), type, name: "", provisions: "", mana: "", rarity: "Common", race: "", klass: "", position: "Frontline", keywords: [], attack: "", health: "", strike: "", abilities: [], passive: "", text: "", flavor: "" };
 }
+// Abilities are { prov, mana, text }. Older cards stored them as plain strings;
+// normalize on load and render either shape.
+function normAbility(ab) {
+  return typeof ab === "string" ? { prov: "", mana: "", text: ab } : { prov: ab.prov || "", mana: ab.mana || "", text: ab.text || "" };
+}
+function abilityLine(ab) {
+  if (typeof ab === "string") return ab;
+  const cost = [ab.prov ? `${ab.prov}P` : "", ab.mana ? `${ab.mana}M` : ""].filter(Boolean).join(" ");
+  return (cost ? `(${cost}) ` : "") + (ab.text || "");
+}
 
 // ---- small UI helpers -----------------------------------------------------
 const Label = ({ children }) => <label className="block text-[11px] uppercase tracking-wide text-neutral-400 mb-1">{children}</label>;
@@ -59,7 +69,7 @@ function CardTile({ card, canEdit, onEdit, onDelete }) {
     ? [card.race && card.klass ? `${card.race} ${card.klass}` : (card.race || card.klass), card.position, card.rarity].filter(Boolean).join("  \u00b7  ")
     : `${card.type}  \u00b7  ${card.rarity}`;
   const bodyLines = unitLike
-    ? [card.strike ? `Strike: ${card.strike}` : "", ...(card.abilities || []).filter(Boolean).map((a) => `\u2022 ${a}`), card.passive ? `Passive: ${card.passive}` : ""].filter(Boolean)
+    ? [card.strike ? `Strike: ${card.strike}` : "", ...(card.abilities || []).map(abilityLine).filter(Boolean).map((a) => `\u2022 ${a}`), card.passive ? `Passive: ${card.passive}` : ""].filter(Boolean)
     : (card.text ? [card.text] : []);
   return (
     <div className="group relative w-[260px] rounded-xl border border-neutral-700 bg-neutral-900 shadow-lg overflow-hidden flex flex-col">
@@ -97,7 +107,7 @@ function Editor({ draft, setDraft, keywords, onAddKeyword, onSave, onCancel, sav
   const classOptions = draft.race ? RACE_CLASSES[draft.race] || [] : [];
   const set = (patch) => setDraft({ ...draft, ...patch });
   const toggleKeyword = (k) => set({ keywords: draft.keywords.includes(k) ? draft.keywords.filter((x) => x !== k) : [...draft.keywords, k] });
-  const setAbility = (i, val) => { const a = [...draft.abilities]; a[i] = val; set({ abilities: a }); };
+  const setAbility = (i, field, val) => { const a = [...draft.abilities]; a[i] = { ...a[i], [field]: val }; set({ abilities: a }); };
   const [newKw, setNewKw] = useState("");
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 p-4 overflow-y-auto">
@@ -128,15 +138,17 @@ function Editor({ draft, setDraft, keywords, onAddKeyword, onSave, onCancel, sav
                 </div>
                 <div><Label>Strike (basic attack text)</Label><input className={inputCls} value={draft.strike} onChange={(e) => set({ strike: e.target.value })} placeholder="Deal 3 to a unit." /></div>
                 <div>
-                  <Label>Abilities</Label>
+                  <Label>Abilities (Prov / Mana cost + effect)</Label>
                   <div className="space-y-2">
                     {draft.abilities.map((ab, i) => (
-                      <div key={i} className="flex gap-2">
-                        <input className={inputCls} value={ab} onChange={(e) => setAbility(i, e.target.value)} placeholder={`Ability ${i + 1} — e.g. Shield Bash (P1): Strike and Stun.`} />
+                      <div key={i} className="flex gap-2 items-center">
+                        <input className={inputCls + " w-12 text-center px-1"} value={ab.prov} onChange={(e) => setAbility(i, "prov", e.target.value)} placeholder="P" inputMode="numeric" title="Provisions cost" />
+                        <input className={inputCls + " w-12 text-center px-1"} value={ab.mana} onChange={(e) => setAbility(i, "mana", e.target.value)} placeholder="M" inputMode="numeric" title="Mana cost" />
+                        <input className={inputCls} value={ab.text} onChange={(e) => setAbility(i, "text", e.target.value)} placeholder={`Ability ${i + 1} — e.g. Shield Bash: Strike and Stun.`} />
                         <button onClick={() => set({ abilities: draft.abilities.filter((_, x) => x !== i) })} className="shrink-0 px-2 rounded-md bg-neutral-700 hover:bg-rose-700 text-white text-sm">✕</button>
                       </div>
                     ))}
-                    <button onClick={() => set({ abilities: [...draft.abilities, ""] })} className="text-xs text-amber-300 border border-amber-500/40 rounded px-2 py-1 hover:bg-amber-500/10">+ Add ability</button>
+                    <button onClick={() => set({ abilities: [...draft.abilities, { prov: "", mana: "", text: "" }] })} className="text-xs text-amber-300 border border-amber-500/40 rounded px-2 py-1 hover:bg-amber-500/10">+ Add ability</button>
                   </div>
                 </div>
                 <div><Label>Passive text</Label><textarea className={inputCls} rows={2} value={draft.passive} onChange={(e) => set({ passive: e.target.value })} placeholder="Takes 1 less combat damage while you control another Dwarf." /></div>
@@ -362,7 +374,7 @@ export default function Page() {
   const counts = CARD_TYPES.reduce((a, t) => { a[t] = cards.filter((c) => c.type === t).length; return a; }, {});
 
   const startNew = () => setDraft(blankCard(view));
-  const editCard = (card) => setDraft({ ...card, abilities: [...(card.abilities || [])], keywords: [...(card.keywords || [])] });
+  const editCard = (card) => setDraft({ ...card, abilities: (card.abilities || []).map(normAbility), keywords: [...(card.keywords || [])] });
 
   const saveDraft = async () => {
     setSaving(true); setStatus("");
