@@ -840,6 +840,11 @@ export default function Page() {
 
       {draft && <Editor draft={draft} setDraft={setDraft} keywords={keywords} onAddKeyword={addKeyword} onSave={saveDraft} onCancel={() => setDraft(null)} saving={saving} users={users} races={races} />}
       {rulebookOpen && <RulebookModal onClose={() => setRulebookOpen(false)} />}
+      {authed && username.toLowerCase() === "hunter" && (
+        <div className="fixed bottom-4 right-4 z-40 pointer-events-none select-none" style={{ fontFamily: "Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif", color: "#c4b5fd", fontSize: "1.1rem", letterSpacing: "0.05em", textShadow: "0 0 12px #7c3aed88" }}>
+          HUNTER IS ONLINE
+        </div>
+      )}
     </div>
   );
 }
