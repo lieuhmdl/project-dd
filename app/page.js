@@ -221,10 +221,16 @@ function Editor({ draft, setDraft, keywords, onAddKeyword, onSave, onCancel, sav
 // ---- keywords view --------------------------------------------------------
 function KeywordsView({ keywords, canEdit, onSet }) {
   const [name, setName] = useState(""); const [desc, setDesc] = useState("");
+  const [editing, setEditing] = useState(null); // keyword name being edited
+  const [editDesc, setEditDesc] = useState("");
+
   const add = () => {
     if (!name.trim() || keywords.some((k) => k.name.toLowerCase() === name.trim().toLowerCase())) return;
     onSet([...keywords, { name: name.trim(), desc: desc.trim() }]); setName(""); setDesc("");
   };
+  const startEdit = (k) => { setEditing(k.name); setEditDesc(k.desc); };
+  const saveEdit = (kName) => { onSet(keywords.map((k) => k.name === kName ? { ...k, desc: editDesc } : k)); setEditing(null); };
+
   return (
     <div className="max-w-3xl">
       <h2 className="text-xl font-semibold text-amber-200 mb-1">Keywords</h2>
@@ -239,9 +245,20 @@ function KeywordsView({ keywords, canEdit, onSet }) {
       <div className="divide-y divide-neutral-800 border border-neutral-800 rounded-lg overflow-hidden">
         {keywords.map((k) => (
           <div key={k.name} className="flex items-start gap-3 px-3 py-2 bg-neutral-900">
-            <span className="shrink-0 w-28 font-semibold text-amber-300 text-sm">{k.name}</span>
-            <span className="flex-grow text-sm text-neutral-300">{k.desc}</span>
-            {canEdit && <button onClick={() => onSet(keywords.filter((x) => x.name !== k.name))} className="shrink-0 text-rose-400 hover:text-rose-300 text-sm">remove</button>}
+            <span className="shrink-0 w-28 font-semibold text-amber-300 text-sm pt-0.5">{k.name}</span>
+            {canEdit && editing === k.name ? (
+              <>
+                <input autoFocus className={inputCls + " flex-grow text-sm"} value={editDesc} onChange={(e) => setEditDesc(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveEdit(k.name); if (e.key === "Escape") setEditing(null); }} placeholder="What it does…" />
+                <button onClick={() => saveEdit(k.name)} className="shrink-0 text-emerald-400 hover:text-emerald-200 text-sm">save</button>
+                <button onClick={() => setEditing(null)} className="shrink-0 text-neutral-500 hover:text-white text-sm">cancel</button>
+              </>
+            ) : (
+              <>
+                <span className="flex-grow text-sm text-neutral-300">{k.desc || <span className="text-neutral-600 italic">no description</span>}</span>
+                {canEdit && <button onClick={() => startEdit(k)} className="shrink-0 text-neutral-500 hover:text-amber-300 text-sm">edit</button>}
+                {canEdit && <button onClick={() => onSet(keywords.filter((x) => x.name !== k.name))} className="shrink-0 text-rose-400 hover:text-rose-300 text-sm">remove</button>}
+              </>
+            )}
           </div>
         ))}
       </div>
