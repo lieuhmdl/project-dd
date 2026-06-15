@@ -144,7 +144,7 @@ function Editor({ draft, setDraft, keywords, onAddKeyword, onSave, onCancel, sav
                       <div key={i} className="flex gap-2 items-center">
                         <input className={inputCls + " w-12 text-center px-1"} value={ab.prov} onChange={(e) => setAbility(i, "prov", e.target.value)} placeholder="P" inputMode="numeric" title="Provisions cost" />
                         <input className={inputCls + " w-12 text-center px-1"} value={ab.mana} onChange={(e) => setAbility(i, "mana", e.target.value)} placeholder="M" inputMode="numeric" title="Mana cost" />
-                        <input className={inputCls} value={ab.text} onChange={(e) => setAbility(i, "text", e.target.value)} placeholder={`Ability ${i + 1} — e.g. Shield Bash: Strike and Stun.`} />
+                        <textarea className={inputCls + " resize-none overflow-hidden transition-all duration-200 leading-snug"} rows={1} value={ab.text} onChange={(e) => { setAbility(i, "text", e.target.value); e.target.style.height = "auto"; e.target.style.height = e.target.scrollHeight + "px"; }} onFocus={(e) => { if (e.target.rows === 1) { e.target.style.height = "auto"; e.target.style.height = Math.max(e.target.scrollHeight, 72) + "px"; } }} onBlur={(e) => { if (!ab.text) { e.target.style.height = ""; } }} placeholder={`Ability ${i + 1} — e.g. Shield Bash: Strike and Stun.`} style={{ minHeight: "2.25rem" }} />
                         <button onClick={() => set({ abilities: draft.abilities.filter((_, x) => x !== i) })} className="shrink-0 px-2 rounded-md bg-neutral-700 hover:bg-rose-700 text-white text-sm">✕</button>
                       </div>
                     ))}
