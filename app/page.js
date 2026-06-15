@@ -571,6 +571,7 @@ export default function Page() {
   const [keywords, setKeywords] = useState([]);
   const [users, setUsers] = useState([]);
   const [races, setRaces] = useState([]);
+  const [presence, setPresence] = useState({});
   const [view, setView] = useState("Unit");
   const [rulebookOpen, setRulebookOpen] = useState(false);
   const [draft, setDraft] = useState(null);
@@ -598,6 +599,7 @@ export default function Page() {
       setKeywords(d.keywords || []);
       setUsers(d.users || []);
       setRaces(d.races || []);
+      setPresence(d.presence || {});
     } catch (e) { /* offline; keep what we have */ }
   };
 
@@ -623,7 +625,19 @@ export default function Page() {
     if (d.ok) { setAuthed(true); localStorage.setItem("pd_user", username); localStorage.setItem("pd_token", token); }
     else { setAuthed(false); setSignError("Username or token not recognized."); }
   };
-  const signOut = () => { setAuthed(false); localStorage.removeItem("pd_user"); localStorage.removeItem("pd_token"); };
+  const signOut = () => {
+    fetch("/api/presence", { method: "DELETE", headers: { "Content-Type": "application/json", "x-username": username, "x-token": token } }).catch(() => {});
+    setAuthed(false); localStorage.removeItem("pd_user"); localStorage.removeItem("pd_token");
+  };
+
+  // heartbeat: ping presence every 30s while signed in
+  useEffect(() => {
+    if (!authed) return;
+    const ping = () => fetch("/api/presence", { method: "POST", headers: { "Content-Type": "application/json", "x-username": username, "x-token": token } }).catch(() => {});
+    ping();
+    const iv = setInterval(ping, 30000);
+    return () => clearInterval(iv);
+  }, [authed, username, token]);
 
   const [search, setSearch] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -840,7 +854,7 @@ export default function Page() {
 
       {draft && <Editor draft={draft} setDraft={setDraft} keywords={keywords} onAddKeyword={addKeyword} onSave={saveDraft} onCancel={() => setDraft(null)} saving={saving} users={users} races={races} />}
       {rulebookOpen && <RulebookModal onClose={() => setRulebookOpen(false)} />}
-      {authed && username.toLowerCase() === "hunter" && (
+      {presence.hunter && Date.now() - presence.hunter < 90000 && (
         <div className="fixed bottom-4 right-4 z-40 pointer-events-none select-none" style={{ fontFamily: "Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif", color: "#c4b5fd", fontSize: "1.1rem", letterSpacing: "0.05em", textShadow: "0 0 12px #7c3aed88" }}>
           HUNTER IS ONLINE
         </div>
