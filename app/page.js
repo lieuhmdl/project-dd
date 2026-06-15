@@ -447,6 +447,7 @@ export default function Page() {
         {["Keywords", "Lore", "Admin"].map((t) => (
           <button key={t} onClick={() => setView(t)} className={"rounded-md px-3 py-2 text-sm text-left transition " + (view === t ? "bg-violet-800/40 text-amber-200 border border-violet-600/50" : "hover:bg-neutral-800 text-neutral-300")}>{t}</button>
         ))}
+        <a href="/rulebook.docx" download className="rounded-md px-3 py-2 text-sm text-left transition hover:bg-neutral-800 text-neutral-300">Draft Rulebook</a>
 
         <div className="mt-auto pt-4 space-y-2">
           <button onClick={exportJSON} className="w-full rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-3 py-2 text-sm">⬇ Export JSON</button>
