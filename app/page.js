@@ -424,7 +424,7 @@ function RulebookModal({ onClose }) {
               key={s.text}
               data-section={s.text}
               onClick={() => scrollTo(s.text)}
-              className={"w-full text-left rounded px-2 py-1.5 text-sm transition " +
+              className={"w-full text-left rounded px-2 py-1.5 text-sm transition-all duration-200 delay-200 " +
                 (s.level === 1 ? "font-semibold " : s.level === 2 ? "pl-4 " : "pl-6 text-xs ") +
                 (active === s.text ? "bg-amber-600/20 text-amber-200" : "text-neutral-400 hover:text-white hover:bg-neutral-800")}
             >
