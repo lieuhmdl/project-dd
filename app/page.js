@@ -11,26 +11,8 @@ import { useState, useEffect, useRef } from "react";
      the shared write token and manages usernames.
 ============================================================================ */
 
-const RACE_CLASSES = {
-  Human: ["Paladin", "Cleric", "Ranger", "Monk", "Druid"],
-  Dwarf: ["Fighter", "Cleric", "Monk"],
-  Elf: ["Wizard", "Ranger", "Cleric", "Druid"],
-  Gnome: ["Bard", "Cleric", "Druid"],
-  "Half-elf": ["Sorcerer", "Ranger", "Druid", "Cleric"],
-  "Half-orc": ["Barbarian", "Ranger"],
-  Halfling: ["Rogue", "Cleric", "Druid", "Monk"],
-};
-const SIGNATURE = { Human: "Paladin", Dwarf: "Fighter", Elf: "Wizard", Gnome: "Bard", "Half-elf": "Sorcerer", "Half-orc": "Barbarian", Halfling: "Rogue" };
-const TRIBE_INFO = [
-  { tribe: "Human", others: "Cleric, Ranger, Monk, Druid", lean: "Flexible", allies: "Everyone (\u201csecond-best friends\u201d)", rivals: "None" },
-  { tribe: "Dwarf", others: "Cleric, Monk", lean: "Frontline", allies: "Gnome (best), Halfling, Human; Elf in war", rivals: "Half-orc; friction with Elf" },
-  { tribe: "Elf", others: "Ranger, Cleric, Druid", lean: "Backline", allies: "Half-elf; Dwarf in war; gracious to all", rivals: "Half-orc" },
-  { tribe: "Gnome", others: "Cleric, Druid", lean: "Backline", allies: "Dwarf (best), Halfling", rivals: "Goblinoids / giants" },
-  { tribe: "Half-elf", others: "Ranger, Druid, Cleric", lean: "Flexible / Backline", allies: "Elf, Human, Dwarf, Gnome, Halfling", rivals: "Half-orc (mild)" },
-  { tribe: "Half-orc", others: "Ranger", lean: "Frontline", allies: "Human; fellow outsiders", rivals: "Dwarf, Elf" },
-  { tribe: "Halfling", others: "Cleric, Druid, Monk", lean: "Flexible", allies: "Everyone, especially Human", rivals: "None" },
-];
-const RACES = Object.keys(RACE_CLASSES);
+// Race/class data is stored in Redis and loaded dynamically.
+// These helpers derive the shapes the editor needs from the races array.
 const POSITIONS = ["Frontline", "Backline"];
 const RARITIES = ["Common", "Uncommon", "Rare", "Legendary", "Mythic"];
 const CARD_TYPES = ["Unit", "Ancient Legend", "Ancient Relic", "Event", "Artifact"];
@@ -106,10 +88,12 @@ function CardTile({ card, canEdit, onEdit, onDelete }) {
 }
 
 // ---- editor modal ---------------------------------------------------------
-function Editor({ draft, setDraft, keywords, onAddKeyword, onSave, onCancel, saving, users }) {
+function Editor({ draft, setDraft, keywords, onAddKeyword, onSave, onCancel, saving, users, races }) {
   const unitLike = UNIT_LIKE.includes(draft.type);
   const isCompanion = draft.type === "Ancient Legend";
-  const classOptions = draft.race ? RACE_CLASSES[draft.race] || [] : [];
+  const raceEntry = (races || []).find((r) => r.name === draft.race);
+  const classOptions = raceEntry ? raceEntry.classes : [];
+  const raceNames = (races || []).map((r) => r.name);
   const set = (patch) => setDraft({ ...draft, ...patch });
   const toggleTribe = (t) => set({ tribes: (draft.tribes || []).includes(t) ? (draft.tribes || []).filter((x) => x !== t) : [...(draft.tribes || []), t] });
   const toggleKeyword = (k) => set({ keywords: draft.keywords.includes(k) ? draft.keywords.filter((x) => x !== k) : [...draft.keywords, k] });
@@ -133,11 +117,11 @@ function Editor({ draft, setDraft, keywords, onAddKeyword, onSave, onCancel, sav
             {unitLike && (
               <>
                 <div className="grid grid-cols-3 gap-3">
-                  <Select label="Race / Tribe" value={draft.race} onChange={(v) => set({ race: v, klass: (RACE_CLASSES[v] || []).includes(draft.klass) ? draft.klass : "" })} options={RACES} placeholder="Race" />
+                  <Select label="Race / Tribe" value={draft.race} onChange={(v) => { const entry = (races||[]).find(r=>r.name===v); set({ race: v, klass: entry?.classes.includes(draft.klass) ? draft.klass : "" }); }} options={raceNames} placeholder="Race" />
                   <Select label="Class" value={draft.klass} onChange={(v) => set({ klass: v })} options={classOptions} placeholder={draft.race ? "Class" : "pick race first"} disabled={!draft.race} />
                   <Select label="Position" value={draft.position} onChange={(v) => set({ position: v })} options={POSITIONS} placeholder="Position" />
                 </div>
-                {draft.race && <p className="text-[11px] text-neutral-500 -mt-1">Signature class for {draft.race}: <span className="text-amber-400">{SIGNATURE[draft.race]}</span>.</p>}
+                {draft.race && raceEntry?.signature && <p className="text-[11px] text-neutral-500 -mt-1">Signature class for {draft.race}: <span className="text-amber-400">{raceEntry.signature}</span>.</p>}
                 <div className="grid grid-cols-2 gap-3">
                   <TextField label="Attack" value={draft.attack} onChange={(v) => set({ attack: v })} placeholder="0" inputMode="numeric" />
                   <TextField label="Health" value={draft.health} onChange={(v) => set({ health: v })} placeholder="0" inputMode="numeric" />
@@ -162,7 +146,7 @@ function Editor({ draft, setDraft, keywords, onAddKeyword, onSave, onCancel, sav
                   <div>
                     <Label>Race / Tribe Compatibility (click to toggle)</Label>
                     <div className="flex flex-wrap gap-1.5">
-                      {RACES.map((r) => {
+                      {raceNames.map((r) => {
                         const on = (draft.tribes || []).includes(r);
                         return <button key={r} type="button" onClick={() => toggleTribe(r)} className={"text-[11px] rounded px-2 py-1 border transition " + (on ? "bg-violet-500/20 border-violet-400 text-violet-200" : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:border-neutral-500")}>{r}</button>;
                       })}
@@ -178,7 +162,7 @@ function Editor({ draft, setDraft, keywords, onAddKeyword, onSave, onCancel, sav
                   <div>
                     <Label>Race / Tribe Compatibility (click to toggle)</Label>
                     <div className="flex flex-wrap gap-1.5">
-                      {RACES.map((r) => {
+                      {raceNames.map((r) => {
                         const on = (draft.tribes || []).includes(r);
                         return <button key={r} type="button" onClick={() => toggleTribe(r)} className={"text-[11px] rounded px-2 py-1 border transition " + (on ? "bg-violet-500/20 border-violet-400 text-violet-200" : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:border-neutral-500")}>{r}</button>;
                       })}
@@ -249,28 +233,131 @@ function KeywordsView({ keywords, canEdit, onSet }) {
 }
 
 // ---- lore view ------------------------------------------------------------
-function LoreView() {
+function LoreView({ races, onSetRaces, canEdit }) {
+  const [expanded, setExpanded] = useState(null);
+  const [newClassName, setNewClassName] = useState("");
+  // new race form
+  const [raceName, setRaceName] = useState("");
+  const [raceSig, setRaceSig] = useState("");
+  const [raceLean, setRaceLean] = useState("");
+  const [raceAllies, setRaceAllies] = useState("");
+  const [raceRivals, setRaceRivals] = useState("");
+
+  const update = (next) => onSetRaces(next);
+
+  const addRace = () => {
+    const name = raceName.trim();
+    if (!name || races.some((r) => r.name.toLowerCase() === name.toLowerCase())) return;
+    update([...races, { name, signature: raceSig.trim(), classes: raceSig.trim() ? [raceSig.trim()] : [], lean: raceLean.trim(), allies: raceAllies.trim(), rivals: raceRivals.trim() }]);
+    setRaceName(""); setRaceSig(""); setRaceLean(""); setRaceAllies(""); setRaceRivals("");
+  };
+
+  const deleteRace = (name) => update(races.filter((r) => r.name !== name));
+
+  const addClass = (raceName) => {
+    const cls = newClassName.trim();
+    if (!cls) return;
+    update(races.map((r) => r.name === raceName && !r.classes.includes(cls) ? { ...r, classes: [...r.classes, cls] } : r));
+    setNewClassName("");
+  };
+
+  const removeClass = (raceName, cls) =>
+    update(races.map((r) => r.name === raceName ? { ...r, classes: r.classes.filter((c) => c !== cls), signature: r.signature === cls ? "" : r.signature } : r));
+
+  const setSignature = (raceName, cls) =>
+    update(races.map((r) => r.name === raceName ? { ...r, signature: r.signature === cls ? "" : cls } : r));
+
+  const updateField = (raceName, field, value) =>
+    update(races.map((r) => r.name === raceName ? { ...r, [field]: value } : r));
+
   return (
-    <div className="max-w-4xl">
-      <h2 className="text-xl font-semibold text-amber-200 mb-1">Lore Combos (Domain reference)</h2>
-      <p className="text-sm text-neutral-400 mb-4">Lore-accurate Tribe + Class pairings. Class dropdowns are locked to these.</p>
-      <div className="overflow-x-auto border border-neutral-800 rounded-lg">
-        <table className="w-full text-sm">
-          <thead><tr className="bg-neutral-800 text-neutral-300 text-left"><th className="px-3 py-2">Tribe</th><th className="px-3 py-2">Signature ★</th><th className="px-3 py-2">Other classes</th><th className="px-3 py-2">Lean</th><th className="px-3 py-2">Allies</th><th className="px-3 py-2">Rivals</th></tr></thead>
-          <tbody>
-            {TRIBE_INFO.map((t, i) => (
-              <tr key={t.tribe} className={i % 2 ? "bg-neutral-900" : "bg-neutral-900/40"}>
-                <td className="px-3 py-2 font-semibold text-neutral-100">{t.tribe}</td>
-                <td className="px-3 py-2 text-amber-300">{SIGNATURE[t.tribe]} ★</td>
-                <td className="px-3 py-2 text-neutral-300">{t.others}</td>
-                <td className="px-3 py-2 text-neutral-300">{t.lean}</td>
-                <td className="px-3 py-2 text-neutral-400">{t.allies}</td>
-                <td className="px-3 py-2 text-neutral-400">{t.rivals}</td>
+    <div className="max-w-4xl space-y-6">
+      <div>
+        <h2 className="text-xl font-semibold text-amber-200 mb-1">Tribe / Race Reference</h2>
+        <p className="text-sm text-neutral-400 mb-4">Lore-accurate pairings — class dropdowns in the card editor are locked to these.</p>
+        <div className="overflow-x-auto border border-neutral-800 rounded-lg">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-neutral-800 text-neutral-300 text-left">
+                <th className="px-3 py-2">Tribe</th>
+                <th className="px-3 py-2">Signature ★</th>
+                <th className="px-3 py-2">Classes</th>
+                <th className="px-3 py-2">Lean</th>
+                <th className="px-3 py-2">Allies</th>
+                <th className="px-3 py-2">Rivals</th>
+                {canEdit && <th className="px-3 py-2"></th>}
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {races.map((r, i) => (
+                <>
+                  <tr key={r.name} className={i % 2 ? "bg-neutral-900" : "bg-neutral-900/40"}>
+                    <td className="px-3 py-2 font-semibold text-neutral-100">{r.name}</td>
+                    <td className="px-3 py-2 text-amber-300">{r.signature ? `${r.signature} ★` : <span className="text-neutral-600">—</span>}</td>
+                    <td className="px-3 py-2 text-neutral-300">{r.classes.filter((c) => c !== r.signature).join(", ") || <span className="text-neutral-600">—</span>}</td>
+                    <td className="px-3 py-2 text-neutral-300">{r.lean || <span className="text-neutral-600">—</span>}</td>
+                    <td className="px-3 py-2 text-neutral-400">{r.allies || <span className="text-neutral-600">—</span>}</td>
+                    <td className="px-3 py-2 text-neutral-400">{r.rivals || <span className="text-neutral-600">—</span>}</td>
+                    {canEdit && (
+                      <td className="px-3 py-2 whitespace-nowrap">
+                        <button onClick={() => setExpanded(expanded === r.name ? null : r.name)} className="text-xs text-amber-400 hover:text-amber-200 mr-2">{expanded === r.name ? "▲ Close" : "▼ Edit"}</button>
+                        <button onClick={() => deleteRace(r.name)} className="text-xs text-rose-500 hover:text-rose-300">Delete</button>
+                      </td>
+                    )}
+                  </tr>
+                  {canEdit && expanded === r.name && (
+                    <tr key={r.name + "-edit"} className="bg-neutral-800/60">
+                      <td colSpan={7} className="px-4 py-3">
+                        <div className="space-y-3">
+                          {/* classes */}
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-neutral-400 mb-1.5">Classes — click ★ to set signature</p>
+                            <div className="flex flex-wrap gap-1.5 mb-2">
+                              {r.classes.map((cls) => (
+                                <span key={cls} className="inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs bg-neutral-900 border-neutral-700 text-neutral-200">
+                                  <button onClick={() => setSignature(r.name, cls)} title="Set as signature" className={r.signature === cls ? "text-amber-400" : "text-neutral-600 hover:text-amber-400"}>★</button>
+                                  {cls}
+                                  <button onClick={() => removeClass(r.name, cls)} className="text-neutral-600 hover:text-rose-400">✕</button>
+                                </span>
+                              ))}
+                            </div>
+                            <div className="flex gap-2">
+                              <input className={inputCls + " max-w-[200px]"} value={newClassName} onChange={(e) => setNewClassName(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") addClass(r.name); }} placeholder="New class name…" />
+                              <button onClick={() => addClass(r.name)} className="shrink-0 px-3 rounded-md bg-amber-600 hover:bg-amber-500 text-black text-sm font-semibold">Add Class</button>
+                            </div>
+                          </div>
+                          {/* meta fields */}
+                          <div className="grid grid-cols-3 gap-3">
+                            <div><label className="block text-[11px] uppercase tracking-wide text-neutral-400 mb-1">Lean</label><input className={inputCls} value={r.lean} onChange={(e) => updateField(r.name, "lean", e.target.value)} placeholder="Frontline / Backline / Flexible" /></div>
+                            <div><label className="block text-[11px] uppercase tracking-wide text-neutral-400 mb-1">Allies</label><input className={inputCls} value={r.allies} onChange={(e) => updateField(r.name, "allies", e.target.value)} placeholder="Allied races…" /></div>
+                            <div><label className="block text-[11px] uppercase tracking-wide text-neutral-400 mb-1">Rivals</label><input className={inputCls} value={r.rivals} onChange={(e) => updateField(r.name, "rivals", e.target.value)} placeholder="Rival races…" /></div>
+                          </div>
+                          <button onClick={() => update([...races])} className="text-xs text-emerald-400 hover:text-emerald-200 border border-emerald-700/40 rounded px-3 py-1 hover:bg-emerald-900/20">Save changes</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {canEdit && (
+        <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-4 space-y-3">
+          <h3 className="text-sm font-semibold text-amber-300">Add New Tribe / Race</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div><label className="block text-[11px] uppercase tracking-wide text-neutral-400 mb-1">Race Name <span className="text-rose-400">*</span></label><input className={inputCls} value={raceName} onChange={(e) => setRaceName(e.target.value)} placeholder="e.g. Tiefling" /></div>
+            <div><label className="block text-[11px] uppercase tracking-wide text-neutral-400 mb-1">Signature Class</label><input className={inputCls} value={raceSig} onChange={(e) => setRaceSig(e.target.value)} placeholder="e.g. Warlock" /></div>
+            <div><label className="block text-[11px] uppercase tracking-wide text-neutral-400 mb-1">Lean</label><input className={inputCls} value={raceLean} onChange={(e) => setRaceLean(e.target.value)} placeholder="Frontline / Backline…" /></div>
+            <div><label className="block text-[11px] uppercase tracking-wide text-neutral-400 mb-1">Allies</label><input className={inputCls} value={raceAllies} onChange={(e) => setRaceAllies(e.target.value)} placeholder="Allied races…" /></div>
+            <div><label className="block text-[11px] uppercase tracking-wide text-neutral-400 mb-1">Rivals</label><input className={inputCls} value={raceRivals} onChange={(e) => setRaceRivals(e.target.value)} placeholder="Rival races…" /></div>
+          </div>
+          <button onClick={addRace} disabled={!raceName.trim()} className="px-4 py-2 rounded-md bg-amber-600 hover:bg-amber-500 disabled:opacity-40 text-black text-sm font-semibold">Add Race</button>
+        </div>
+      )}
+      {!canEdit && <p className="text-sm text-neutral-500">Sign in to manage tribes and classes.</p>}
     </div>
   );
 }
@@ -446,6 +533,7 @@ export default function Page() {
   const [cards, setCards] = useState([]);
   const [keywords, setKeywords] = useState([]);
   const [users, setUsers] = useState([]);
+  const [races, setRaces] = useState([]);
   const [view, setView] = useState("Unit");
   const [rulebookOpen, setRulebookOpen] = useState(false);
   const [draft, setDraft] = useState(null);
@@ -472,6 +560,7 @@ export default function Page() {
       setCards(d.cards || []);
       setKeywords(d.keywords || []);
       setUsers(d.users || []);
+      setRaces(d.races || []);
     } catch (e) { /* offline; keep what we have */ }
   };
 
@@ -520,9 +609,14 @@ export default function Page() {
     else alert("Couldn't delete (are you signed in?)");
   };
   const setKeywordsRemote = async (next) => {
-    setKeywords(next); // optimistic
+    setKeywords(next);
     const r = await fetch("/api/keywords", { method: "PUT", headers: writeHeaders(), body: JSON.stringify({ keywords: next }) });
     if (!r.ok) { alert("Couldn't save keywords (are you signed in?)"); fetchData(); }
+  };
+  const setRacesRemote = async (next) => {
+    setRaces(next);
+    const r = await fetch("/api/races", { method: "PUT", headers: writeHeaders(), body: JSON.stringify({ races: next }) });
+    if (!r.ok) { alert("Couldn't save races (are you signed in?)"); fetchData(); }
   };
   const addKeyword = (n) => { if (!keywords.some((k) => k.name.toLowerCase() === n.toLowerCase())) setKeywordsRemote([...keywords, { name: n, desc: "" }]); };
 
@@ -610,13 +704,13 @@ export default function Page() {
         ) : view === "Keywords" ? (
           <KeywordsView keywords={keywords} canEdit={authed} onSet={setKeywordsRemote} />
         ) : view === "Lore" ? (
-          <LoreView />
+          <LoreView races={races} onSetRaces={setRacesRemote} canEdit={authed} />
         ) : (
           <AdminView />
         )}
       </main>
 
-      {draft && <Editor draft={draft} setDraft={setDraft} keywords={keywords} onAddKeyword={addKeyword} onSave={saveDraft} onCancel={() => setDraft(null)} saving={saving} users={users} />}
+      {draft && <Editor draft={draft} setDraft={setDraft} keywords={keywords} onAddKeyword={addKeyword} onSave={saveDraft} onCancel={() => setDraft(null)} saving={saving} users={users} races={races} />}
       {rulebookOpen && <RulebookModal onClose={() => setRulebookOpen(false)} />}
     </div>
   );

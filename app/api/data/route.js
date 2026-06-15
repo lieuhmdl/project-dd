@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 export async function GET() {
   try {
     const doc = await getDoc();
-    return NextResponse.json({ cards: doc.cards, keywords: doc.keywords, users: doc.users });
+    return NextResponse.json({ cards: doc.cards, keywords: doc.keywords, users: doc.users, races: doc.races });
   } catch (e) {
     return NextResponse.json({ error: "storage_not_configured" }, { status: 503 });
   }
