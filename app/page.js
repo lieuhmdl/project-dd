@@ -625,9 +625,44 @@ export default function Page() {
   };
   const signOut = () => { setAuthed(false); localStorage.removeItem("pd_user"); localStorage.removeItem("pd_token"); };
 
+  const [search, setSearch] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [filterRace, setFilterRace] = useState("");
+  const [filterClass, setFilterClass] = useState("");
+  const [filterKeyword, setFilterKeyword] = useState("");
+  const [filterTribe, setFilterTribe] = useState("");
+
+  // reset search/filters when switching tabs
+  const switchView = (v) => { setView(v); setSearch(""); setFilterRace(""); setFilterClass(""); setFilterKeyword(""); setFilterTribe(""); setFilterOpen(false); };
+
   const isTypeView = CARD_TYPES.includes(view);
-  const visible = cards.filter((c) => c.type === view);
+
+  const typeCards = cards.filter((c) => c.type === view);
+  const visible = typeCards.filter((c) => {
+    const q = search.trim().toLowerCase();
+    if (q) {
+      const inName = (c.name || "").toLowerCase().includes(q);
+      const inRace = (c.race || "").toLowerCase().includes(q);
+      const inClass = (c.klass || "").toLowerCase().includes(q);
+      const inKeywords = (c.keywords || []).some((k) => k.toLowerCase().includes(q));
+      const inTribes = (c.tribes || []).some((t) => t.toLowerCase().includes(q));
+      if (!inName && !inRace && !inClass && !inKeywords && !inTribes) return false;
+    }
+    if (filterRace && (c.race || "") !== filterRace) return false;
+    if (filterClass && (c.klass || "") !== filterClass) return false;
+    if (filterKeyword && !(c.keywords || []).includes(filterKeyword)) return false;
+    if (filterTribe && !(c.tribes || []).includes(filterTribe)) return false;
+    return true;
+  });
+
   const counts = CARD_TYPES.reduce((a, t) => { a[t] = cards.filter((c) => c.type === t).length; return a; }, {});
+  const activeFilters = [filterRace, filterClass, filterKeyword, filterTribe].filter(Boolean).length;
+
+  // dropdown options derived from cards of current type
+  const raceOptions = [...new Set(typeCards.map((c) => c.race).filter(Boolean))].sort();
+  const classOptions = [...new Set(typeCards.map((c) => c.klass).filter(Boolean))].sort();
+  const keywordOptions = [...new Set(typeCards.flatMap((c) => c.keywords || []))].sort();
+  const tribeOptions = [...new Set(typeCards.flatMap((c) => c.tribes || []))].sort();
 
   const startNew = () => setDraft(blankCard(view));
   const editCard = (card) => setDraft({ ...card, abilities: (card.abilities || []).map(normAbility), keywords: [...(card.keywords || [])] });
@@ -700,13 +735,13 @@ export default function Page() {
 
         <p className="text-[10px] uppercase tracking-wide text-neutral-600 mt-1 mb-1">Card types</p>
         {CARD_TYPES.map((t) => (
-          <button key={t} onClick={() => setView(t)} className={"flex items-center justify-between rounded-md px-3 py-2 text-sm text-left transition " + (view === t ? "bg-violet-800/40 text-amber-200 border border-violet-600/50" : "hover:bg-neutral-800 text-neutral-300")}>
+          <button key={t} onClick={() => switchView(t)} className={"flex items-center justify-between rounded-md px-3 py-2 text-sm text-left transition " + (view === t ? "bg-violet-800/40 text-amber-200 border border-violet-600/50" : "hover:bg-neutral-800 text-neutral-300")}>
             <span>{t}</span><span className="text-[11px] text-neutral-500">{counts[t]}</span>
           </button>
         ))}
         <p className="text-[10px] uppercase tracking-wide text-neutral-600 mt-3 mb-1">Reference & settings</p>
         {["Keywords", "Lore", "Admin"].map((t) => (
-          <button key={t} onClick={() => setView(t)} className={"rounded-md px-3 py-2 text-sm text-left transition " + (view === t ? "bg-violet-800/40 text-amber-200 border border-violet-600/50" : "hover:bg-neutral-800 text-neutral-300")}>{t}</button>
+          <button key={t} onClick={() => switchView(t)} className={"rounded-md px-3 py-2 text-sm text-left transition " + (view === t ? "bg-violet-800/40 text-amber-200 border border-violet-600/50" : "hover:bg-neutral-800 text-neutral-300")}>{t}</button>
         ))}
         <button onClick={() => setRulebookOpen(true)} className="rounded-md px-3 py-2 text-sm text-left transition hover:bg-neutral-800 text-neutral-300">Draft Rulebook</button>
 
@@ -726,12 +761,68 @@ export default function Page() {
         )}
         {isTypeView ? (
           <>
-            <div className="flex items-center justify-between mb-5">
-              <div><h2 className="text-2xl font-bold text-neutral-100">{view}</h2><p className="text-sm text-neutral-500">{visible.length} card{visible.length === 1 ? "" : "s"}{!authed && " · read-only (sign in to edit)"}</p></div>
+            <div className="flex items-center justify-between mb-3">
+              <div><h2 className="text-2xl font-bold text-neutral-100">{view}</h2><p className="text-sm text-neutral-500">{visible.length}{visible.length !== typeCards.length ? ` of ${typeCards.length}` : ""} card{visible.length === 1 ? "" : "s"}{!authed && " · read-only (sign in to edit)"}</p></div>
               {authed && <button onClick={startNew} className="rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-semibold px-4 py-2 text-sm shadow">+ New {view}</button>}
             </div>
+
+            {/* search + filter bar */}
+            <div className="mb-4 space-y-2">
+              <div className="flex gap-2">
+                <input
+                  className={inputCls + " flex-grow"}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by name, race, class, keyword, or tribe…"
+                />
+                <button
+                  onClick={() => setFilterOpen((o) => !o)}
+                  className={"shrink-0 px-3 py-1.5 rounded-md border text-sm font-medium transition " + (filterOpen || activeFilters > 0 ? "bg-amber-600/20 border-amber-500 text-amber-200" : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:border-neutral-500")}
+                >
+                  Filter{activeFilters > 0 ? ` (${activeFilters})` : ""}
+                </button>
+                {(search || activeFilters > 0) && (
+                  <button onClick={() => { setSearch(""); setFilterRace(""); setFilterClass(""); setFilterKeyword(""); setFilterTribe(""); }} className="shrink-0 px-3 py-1.5 rounded-md bg-neutral-800 border border-neutral-700 text-sm text-neutral-400 hover:text-white">Clear</button>
+                )}
+              </div>
+              {filterOpen && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 rounded-lg border border-neutral-800 bg-neutral-900">
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wide text-neutral-500 mb-1">Race / Tribe</label>
+                    <select className={inputCls + " text-sm"} value={filterRace} onChange={(e) => setFilterRace(e.target.value)}>
+                      <option value="">All</option>
+                      {raceOptions.map((r) => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wide text-neutral-500 mb-1">Class</label>
+                    <select className={inputCls + " text-sm"} value={filterClass} onChange={(e) => setFilterClass(e.target.value)}>
+                      <option value="">All</option>
+                      {classOptions.map((c) => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wide text-neutral-500 mb-1">Keyword</label>
+                    <select className={inputCls + " text-sm"} value={filterKeyword} onChange={(e) => setFilterKeyword(e.target.value)}>
+                      <option value="">All</option>
+                      {keywordOptions.map((k) => <option key={k} value={k}>{k}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wide text-neutral-500 mb-1">Companion Tribe</label>
+                    <select className={inputCls + " text-sm"} value={filterTribe} onChange={(e) => setFilterTribe(e.target.value)}>
+                      <option value="">All</option>
+                      {tribeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {visible.length === 0 ? (
-              <div className="border border-dashed border-neutral-800 rounded-xl p-12 text-center text-neutral-500">No {view} cards yet.{authed && <> Click <span className="text-amber-400 font-semibold">+ New {view}</span>.</>}</div>
+              <div className="border border-dashed border-neutral-800 rounded-xl p-12 text-center text-neutral-500">
+                {typeCards.length === 0 ? <>No {view} cards yet.{authed && <> Click <span className="text-amber-400 font-semibold">+ New {view}</span>.</>}</> : "No cards match your search."}
+              </div>
             ) : (
               <div className="flex flex-wrap gap-4">
                 {visible.map((c) => <CardTile key={c.id} card={c} canEdit={authed} onEdit={() => editCard(c)} onDelete={() => deleteCard(c.id)} />)}
