@@ -572,6 +572,9 @@ export default function Page() {
   const [users, setUsers] = useState([]);
   const [races, setRaces] = useState([]);
   const [presence, setPresence] = useState({});
+  const [cardOrder, setCardOrder] = useState({});
+  const [dragId, setDragId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
   const [view, setView] = useState("Unit");
   const [rulebookOpen, setRulebookOpen] = useState(false);
   const [draft, setDraft] = useState(null);
@@ -600,6 +603,7 @@ export default function Page() {
       setUsers(d.users || []);
       setRaces(d.races || []);
       setPresence(d.presence || {});
+      setCardOrder(d.cardOrder || {});
     } catch (e) { /* offline; keep what we have */ }
   };
 
@@ -651,7 +655,13 @@ export default function Page() {
 
   const isTypeView = CARD_TYPES.includes(view);
 
-  const typeCards = cards.filter((c) => c.type === view);
+  const typeCards = (() => {
+    const raw = cards.filter((c) => c.type === view);
+    const order = cardOrder[view];
+    if (!order || !order.length) return raw;
+    const pos = new Map(order.map((id, i) => [id, i]));
+    return [...raw].sort((a, b) => (pos.has(a.id) ? pos.get(a.id) : Infinity) - (pos.has(b.id) ? pos.get(b.id) : Infinity));
+  })();
   const visible = typeCards.filter((c) => {
     const q = search.trim().toLowerCase();
     if (q) {
@@ -705,6 +715,28 @@ export default function Page() {
     if (!r.ok) { alert("Couldn't save races (are you signed in?)"); fetchData(); }
   };
   const addKeyword = (n) => { if (!keywords.some((k) => k.name.toLowerCase() === n.toLowerCase())) setKeywordsRemote([...keywords, { name: n, desc: "" }]); };
+
+  const saveOrder = async (type, ids) => {
+    setCardOrder((prev) => ({ ...prev, [type]: ids }));
+    await fetch("/api/order", { method: "PUT", headers: writeHeaders(), body: JSON.stringify({ type, ids }) });
+  };
+
+  const canDrag = authed && !search && !filterRace && !filterClass && !filterKeyword && !filterTribe;
+
+  const handleDragStart = (e, id) => { if (!canDrag) return; setDragId(id); e.dataTransfer.effectAllowed = "move"; };
+  const handleDragOver = (e, id) => { e.preventDefault(); if (canDrag) setDragOverId(id); };
+  const handleDrop = (e, targetId) => {
+    e.preventDefault();
+    if (!dragId || dragId === targetId) { setDragId(null); setDragOverId(null); return; }
+    const ids = typeCards.map((c) => c.id);
+    const from = ids.indexOf(dragId);
+    const to = ids.indexOf(targetId);
+    ids.splice(from, 1);
+    ids.splice(to, 0, dragId);
+    saveOrder(view, ids);
+    setDragId(null); setDragOverId(null);
+  };
+  const handleDragEnd = () => { setDragId(null); setDragOverId(null); };
 
   const exportJSON = () => {
     const blob = new Blob([JSON.stringify({ cards, keywords, exportedAt: new Date().toISOString() }, null, 2)], { type: "application/json" });
@@ -838,9 +870,24 @@ export default function Page() {
                 {typeCards.length === 0 ? <>No {view} cards yet.{authed && <> Click <span className="text-amber-400 font-semibold">+ New {view}</span>.</>}</> : "No cards match your search."}
               </div>
             ) : (
-              <div className="flex flex-wrap gap-4">
-                {visible.map((c) => <CardTile key={c.id} card={c} canEdit={authed} onEdit={() => editCard(c)} onDelete={() => deleteCard(c.id)} />)}
-              </div>
+              <>
+                {canDrag && <p className="text-[10px] text-neutral-600 mb-2">Drag cards to reorder · changes visible to all on refresh</p>}
+                <div className="flex flex-wrap gap-4">
+                  {visible.map((c) => (
+                    <div
+                      key={c.id}
+                      draggable={canDrag}
+                      onDragStart={(e) => handleDragStart(e, c.id)}
+                      onDragOver={(e) => handleDragOver(e, c.id)}
+                      onDrop={(e) => handleDrop(e, c.id)}
+                      onDragEnd={handleDragEnd}
+                      className={"transition-all duration-150 " + (canDrag ? "cursor-grab active:cursor-grabbing" : "") + (dragOverId === c.id && dragId !== c.id ? " ring-2 ring-amber-400 ring-offset-2 ring-offset-neutral-950 rounded-xl scale-[1.02]" : "") + (dragId === c.id ? " opacity-40" : "")}
+                    >
+                      <CardTile card={c} canEdit={authed} onEdit={() => editCard(c)} onDelete={() => deleteCard(c.id)} />
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </>
         ) : view === "Keywords" ? (
@@ -854,9 +901,14 @@ export default function Page() {
 
       {draft && <Editor draft={draft} setDraft={setDraft} keywords={keywords} onAddKeyword={addKeyword} onSave={saveDraft} onCancel={() => setDraft(null)} saving={saving} users={users} races={races} />}
       {rulebookOpen && <RulebookModal onClose={() => setRulebookOpen(false)} />}
-      {presence.hunter && Date.now() - presence.hunter < 90000 && (
-        <div className="fixed bottom-4 right-4 z-40 pointer-events-none select-none" style={{ fontFamily: "Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif", color: "#c4b5fd", fontSize: "1.1rem", letterSpacing: "0.05em", textShadow: "0 0 12px #7c3aed88" }}>
-          HUNTER IS ONLINE
+      {((!presence.michael || Date.now() - presence.michael >= 90000) || (presence.hunter && Date.now() - presence.hunter < 90000)) && (
+        <div className="fixed bottom-4 right-4 z-40 pointer-events-none select-none flex items-center gap-3" style={{ fontFamily: "Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif", fontSize: "1.1rem", letterSpacing: "0.05em" }}>
+          {(!presence.michael || Date.now() - presence.michael >= 90000) && (
+            <span style={{ color: "#f97316", textShadow: "0 0 12px #ea580c88" }}>MICHAEL IS OFFLINE</span>
+          )}
+          {presence.hunter && Date.now() - presence.hunter < 90000 && (
+            <span style={{ color: "#c4b5fd", textShadow: "0 0 12px #7c3aed88" }}>HUNTER IS ONLINE</span>
+          )}
         </div>
       )}
     </div>
