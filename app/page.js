@@ -17,6 +17,13 @@ const POSITIONS = ["Frontline", "Backline"];
 const RARITIES = ["Common", "Uncommon", "Rare", "Legendary", "Mythic"];
 const CARD_TYPES = ["Unit", "Ancient Legend", "Ancient Relic", "Event", "Artifact"];
 const UNIT_LIKE = ["Unit", "Ancient Legend"];
+const CHART_COLORS = ["#f59e0b","#8b5cf6","#10b981","#ef4444","#3b82f6","#f97316","#06b6d4","#84cc16","#ec4899","#a78bfa","#34d399","#fb923c","#60a5fa","#f472b6","#fbbf24","#e879f9","#2dd4bf","#fb7185"];
+const GROUP_BY_OPTIONS = [
+  { value: "type", label: "Card Type" }, { value: "race", label: "Race / Tribe" },
+  { value: "klass", label: "Class" }, { value: "rarity", label: "Rarity" },
+  { value: "position", label: "Position" }, { value: "author", label: "Author" },
+  { value: "keyword", label: "Keyword Distribution" }, { value: "tribe", label: "Companion Tribe" },
+];
 
 const uid = () =>
   typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : "id-" + Date.now() + "-" + Math.random().toString(36).slice(2);
@@ -686,6 +693,194 @@ function RulebookModal({ onClose }) {
   );
 }
 
+// ---- pie chart -------------------------------------------------------------
+function PieChart({ slices }) {
+  const [hovered, setHovered] = useState(null);
+  const [tooltip, setTooltip] = useState(null);
+  const size = 210, cx = 105, cy = 105, r = 88;
+  const total = slices.reduce((s, d) => s + d.value, 0);
+
+  if (!total) return (
+    <div className="flex items-center justify-center rounded-full border border-neutral-800" style={{ width: size, height: size }}>
+      <p className="text-neutral-600 text-xs">No data</p>
+    </div>
+  );
+
+  let angle = -Math.PI / 2;
+  const segs = slices.map((s, i) => {
+    const sweep = (s.value / total) * 2 * Math.PI;
+    const a0 = angle, a1 = angle + sweep;
+    angle = a1;
+    let d;
+    if (sweep >= 2 * Math.PI - 0.001) {
+      d = `M ${cx - r} ${cy} A ${r} ${r} 0 1 1 ${cx + r} ${cy} A ${r} ${r} 0 1 1 ${cx - r} ${cy} Z`;
+    } else {
+      const x1 = cx + r * Math.cos(a0), y1 = cy + r * Math.sin(a0);
+      const x2 = cx + r * Math.cos(a1), y2 = cy + r * Math.sin(a1);
+      d = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x2} ${y2} Z`;
+    }
+    return { ...s, d, i, mid: a0 + sweep / 2 };
+  });
+
+  return (
+    <>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {segs.map((seg) => (
+          <path key={seg.i} d={seg.d} fill={seg.color} stroke="#0a0a0a" strokeWidth="1.5"
+            className="cursor-pointer"
+            opacity={hovered !== null && hovered !== seg.i ? 0.45 : 1}
+            style={{ transition: "opacity 0.1s" }}
+            onMouseEnter={(e) => { setHovered(seg.i); setTooltip({ x: e.clientX, y: e.clientY, label: seg.label, value: seg.value, pct: ((seg.value / total) * 100).toFixed(1) }); }}
+            onMouseMove={(e) => setTooltip((t) => t ? { ...t, x: e.clientX, y: e.clientY } : null)}
+            onMouseLeave={() => { setHovered(null); setTooltip(null); }}
+          />
+        ))}
+        <text x={cx} y={cy - 5} textAnchor="middle" fill="#e5e5e5" fontSize="22" fontWeight="bold" style={{ pointerEvents: "none" }}>{total}</text>
+        <text x={cx} y={cy + 13} textAnchor="middle" fill="#525252" fontSize="10" style={{ pointerEvents: "none" }}>cards</text>
+      </svg>
+      {tooltip && (
+        <div className="fixed z-[999] pointer-events-none px-2.5 py-1.5 rounded-lg bg-neutral-800 border border-neutral-700 text-xs text-white shadow-xl" style={{ left: tooltip.x + 14, top: tooltip.y - 30 }}>
+          <span className="font-semibold">{tooltip.label}</span>
+          <span className="text-neutral-400 ml-2">{tooltip.value} ({tooltip.pct}%)</span>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ---- statistics view -------------------------------------------------------
+function StatisticsView({ cards, keywords, races, users }) {
+  const mkConfig = (groupBy) => ({ groupBy, filterTypes: [], filterRace: "", filterClass: "", filterRarity: "", filterPosition: "", filterAuthor: "", filterKeyword: "", filtersOpen: false });
+  const [configs, setConfigs] = useState([mkConfig("rarity"), mkConfig("race")]);
+  const patch = (i, p) => setConfigs((prev) => prev.map((c, j) => j === i ? { ...c, ...p } : c));
+
+  const allRaces   = [...new Set(cards.map((c) => c.race).filter(Boolean))].sort();
+  const allClasses = [...new Set(cards.map((c) => c.klass).filter(Boolean))].sort();
+  const allAuthors = [...new Set(cards.map((c) => c.author).filter(Boolean))].sort();
+  const allKws     = [...new Set(cards.flatMap((c) => c.keywords || []))].sort();
+  const allTribes  = [...new Set(cards.flatMap((c) => c.tribes || []))].sort();
+
+  function slicesFor(cfg) {
+    let rows = cards;
+    if (cfg.filterTypes.length)    rows = rows.filter((c) => cfg.filterTypes.includes(c.type));
+    if (cfg.filterRace)            rows = rows.filter((c) => c.race === cfg.filterRace);
+    if (cfg.filterClass)           rows = rows.filter((c) => c.klass === cfg.filterClass);
+    if (cfg.filterRarity)          rows = rows.filter((c) => c.rarity === cfg.filterRarity);
+    if (cfg.filterPosition)        rows = rows.filter((c) => c.position === cfg.filterPosition);
+    if (cfg.filterAuthor)          rows = rows.filter((c) => c.author === cfg.filterAuthor);
+    if (cfg.filterKeyword)         rows = rows.filter((c) => (c.keywords || []).includes(cfg.filterKeyword));
+    const counts = {};
+    for (const c of rows) {
+      const keys = (() => {
+        switch (cfg.groupBy) {
+          case "type":     return [c.type || "Unknown"];
+          case "race":     return [c.race || "No Race"];
+          case "klass":    return [c.klass || "No Class"];
+          case "rarity":   return [c.rarity || "Unknown"];
+          case "position": return [c.position || "None"];
+          case "author":   return [c.author || "Unknown"];
+          case "keyword":  return c.keywords?.length ? c.keywords : ["No Keywords"];
+          case "tribe":    return c.tribes?.length ? c.tribes : ["No Tribe"];
+          default:         return ["Unknown"];
+        }
+      })();
+      keys.forEach((k) => { counts[k] = (counts[k] || 0) + 1; });
+    }
+    return Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([label, value], i) => ({ label, value, color: CHART_COLORS[i % CHART_COLORS.length] }));
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-xl font-semibold text-amber-200 mb-1">Statistics</h2>
+        <p className="text-sm text-neutral-400">{cards.length} total cards · configure each chart independently · hover slices for details</p>
+      </div>
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        {configs.map((cfg, idx) => {
+          const slices = slicesFor(cfg);
+          const total = slices.reduce((s, d) => s + d.value, 0);
+          const activeFilters = [cfg.filterTypes.length > 0, !!cfg.filterRace, !!cfg.filterClass, !!cfg.filterRarity, !!cfg.filterPosition, !!cfg.filterAuthor, !!cfg.filterKeyword].filter(Boolean).length;
+
+          return (
+            <div key={idx} className="rounded-xl border border-neutral-800 bg-neutral-900 p-4 space-y-3">
+              {/* group-by + filter toggle */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] uppercase tracking-wide text-neutral-500">Group by</span>
+                <select className={inputCls + " flex-grow text-sm"} value={cfg.groupBy} onChange={(e) => patch(idx, { groupBy: e.target.value })}>
+                  {GROUP_BY_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <button onClick={() => patch(idx, { filtersOpen: !cfg.filtersOpen })}
+                  className={"shrink-0 px-3 py-1.5 rounded-md border text-xs font-medium transition " + (cfg.filtersOpen || activeFilters ? "bg-amber-600/20 border-amber-500 text-amber-200" : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:border-neutral-500")}>
+                  Filters{activeFilters ? ` (${activeFilters})` : ""}
+                </button>
+              </div>
+
+              {/* filter panel */}
+              {cfg.filtersOpen && (
+                <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 space-y-3">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-wide text-neutral-500 mb-1.5">Card Types</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {CARD_TYPES.map((t) => { const on = cfg.filterTypes.includes(t); return (
+                        <button key={t} onClick={() => patch(idx, { filterTypes: on ? cfg.filterTypes.filter((x) => x !== t) : [...cfg.filterTypes, t] })}
+                          className={"text-[11px] rounded px-2 py-1 border transition " + (on ? "bg-violet-500/20 border-violet-400 text-violet-200" : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:border-neutral-500")}>
+                          {t}
+                        </button>
+                      ); })}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      ["Race", "filterRace", allRaces],
+                      ["Class", "filterClass", allClasses],
+                      ["Rarity", "filterRarity", RARITIES],
+                      ["Position", "filterPosition", POSITIONS],
+                      ["Author", "filterAuthor", allAuthors],
+                      ["Has Keyword", "filterKeyword", allKws],
+                    ].map(([label, key, opts]) => (
+                      <div key={key}>
+                        <label className="block text-[10px] uppercase tracking-wide text-neutral-500 mb-1">{label}</label>
+                        <select className={inputCls + " text-xs"} value={cfg[key]} onChange={(e) => patch(idx, { [key]: e.target.value })}>
+                          <option value="">All</option>
+                          {opts.map((o) => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                  {activeFilters > 0 && (
+                    <button onClick={() => patch(idx, { filterTypes: [], filterRace: "", filterClass: "", filterRarity: "", filterPosition: "", filterAuthor: "", filterKeyword: "" })}
+                      className="text-xs text-neutral-500 hover:text-white">Clear all filters</button>
+                  )}
+                </div>
+              )}
+
+              {/* chart + legend */}
+              <div className="flex gap-4 items-start">
+                <div className="shrink-0">
+                  <PieChart slices={slices} />
+                </div>
+                <div className="flex-grow min-w-0 space-y-1 overflow-y-auto" style={{ maxHeight: 210 }}>
+                  {slices.length === 0
+                    ? <p className="text-neutral-600 text-xs pt-2">No cards match.</p>
+                    : slices.map((s) => (
+                      <div key={s.label} className="flex items-center gap-2 text-xs group">
+                        <span className="shrink-0 w-2.5 h-2.5 rounded-sm" style={{ background: s.color }} />
+                        <span className="flex-grow truncate text-neutral-300 group-hover:text-white transition">{s.label}</span>
+                        <span className="shrink-0 font-semibold text-neutral-200 tabular-nums">{s.value}</span>
+                        <span className="shrink-0 text-neutral-600 tabular-nums w-9 text-right">{total ? ((s.value / total) * 100).toFixed(0) : 0}%</span>
+                      </div>
+                    ))
+                  }
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ---- main page ------------------------------------------------------------
 export default function Page() {
   const [cards, setCards] = useState([]);
@@ -908,6 +1103,7 @@ export default function Page() {
             <span>{t}</span><span className="text-[11px] text-neutral-500">{counts[t]}</span>
           </button>
         ))}
+        <button onClick={() => switchView("Statistics")} className={"flex items-center justify-between rounded-md px-3 py-2 text-sm text-left transition " + (view === "Statistics" ? "bg-violet-800/40 text-amber-200 border border-violet-600/50" : "hover:bg-neutral-800 text-neutral-300")}>Statistics</button>
         <p className="text-[10px] uppercase tracking-wide text-neutral-600 mt-3 mb-1">Reference & settings</p>
         {["Keywords", "Lore", "Admin", "Change Log"].map((t) => (
           <button key={t} onClick={() => switchView(t)} className={"rounded-md px-3 py-2 text-sm text-left transition " + (view === t ? "bg-violet-800/40 text-amber-200 border border-violet-600/50" : "hover:bg-neutral-800 text-neutral-300")}>{t}</button>
@@ -1019,6 +1215,8 @@ export default function Page() {
           <LoreView races={races} onSetRaces={setRacesRemote} canEdit={authed} />
         ) : view === "Change Log" ? (
           <ChangeLogView changelog={changelog} />
+        ) : view === "Statistics" ? (
+          <StatisticsView cards={cards} keywords={keywords} races={races} users={users} />
         ) : (
           <AdminView />
         )}
