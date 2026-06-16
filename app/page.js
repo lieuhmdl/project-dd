@@ -904,7 +904,6 @@ export default function Page() {
   const [authed, setAuthed] = useState(false);
   const [signError, setSignError] = useState("");
   const draftOpen = useRef(false);
-  const fileInput = useRef(null);
   draftOpen.current = !!draft;
 
   const writeHeaders = () => ({ "Content-Type": "application/json", "x-username": username, "x-token": token });
@@ -1056,23 +1055,69 @@ export default function Page() {
   };
   const handleDragEnd = () => { setDragId(null); setDragOverId(null); };
 
-  const exportJSON = () => {
-    const blob = new Blob([JSON.stringify({ cards, keywords, exportedAt: new Date().toISOString() }, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "project-dd-cards.json"; a.click(); URL.revokeObjectURL(url);
-  };
-  const importJSON = (e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        const parsed = JSON.parse(reader.result);
-        if (!Array.isArray(parsed.cards)) throw new Error();
-        if (!confirm(`Import ${parsed.cards.length} cards? This REPLACES the shared set for everyone.`)) return;
-        const r = await fetch("/api/data", { method: "PUT", headers: writeHeaders(), body: JSON.stringify({ cards: parsed.cards, keywords: parsed.keywords }) });
-        if (r.ok) fetchData(); else alert("Import failed (are you signed in?)");
-      } catch { alert("That doesn't look like a Project DD export file."); }
-    };
-    reader.readAsText(file); e.target.value = "";
+  const [exportPickerOpen, setExportPickerOpen] = useState(false);
+
+  function formatCardText(card) {
+    const lines = [];
+    const divider = "─".repeat(48);
+    lines.push(divider);
+    lines.push(`  ${card.name || "(Unnamed)"}  [${card.type}]`);
+    lines.push(divider);
+
+    const meta = [card.rarity, card.race && card.klass ? `${card.race} ${card.klass}` : (card.race || card.klass || ""), card.position].filter(Boolean).join("  ·  ");
+    if (meta) lines.push(`  ${meta}`);
+
+    const cost = [`Provisions: ${card.provisions || 0}`, `Mana: ${card.mana || 0}`].join("   ");
+    lines.push(`  ${cost}`);
+
+    if (card.attack || card.health) lines.push(`  ATK ${card.attack || 0}  /  HP ${card.health || 0}`);
+    if (card.keywords?.length) lines.push(`  Keywords: ${card.keywords.join(", ")}`);
+    if (card.tribes?.length) lines.push(`  Tribe Compatibility: ${card.tribes.join(", ")}`);
+
+    lines.push("");
+
+    if (card.strike) lines.push(`  Strike: ${card.strike}`);
+
+    (card.abilities || []).forEach((ab) => {
+      if (!ab.text) return;
+      const cost = [ab.prov ? `${ab.prov}P` : "", ab.mana ? `${ab.mana}M` : ""].filter(Boolean).join(" ");
+      lines.push(`  • ${cost ? `(${cost}) ` : ""}${ab.text}`);
+    });
+
+    if (card.passive) lines.push(`  Passive: ${card.passive}`);
+    if (card.text) lines.push(`  ${card.text}`);
+
+    if (card.flavor) { lines.push(""); lines.push(`  "${card.flavor}"`); }
+    if (card.author) { lines.push(""); lines.push(`  — ${card.author}`); }
+
+    lines.push("");
+    return lines.join("\n");
+  }
+
+  const doExport = (type) => {
+    const subset = type === "All" ? cards : cards.filter((c) => c.type === type);
+    const order = cardOrder[type];
+    const ordered = order?.length
+      ? [...subset].sort((a, b) => { const p = new Map(order.map((id, i) => [id, i])); return (p.get(a.id) ?? Infinity) - (p.get(b.id) ?? Infinity); })
+      : subset;
+
+    const header = [
+      `PROJECT DD — ${type === "All" ? "Complete Card Database" : `${type} Cards`}`,
+      `Exported: ${new Date().toLocaleString()}`,
+      `${ordered.length} card${ordered.length !== 1 ? "s" : ""}`,
+      "═".repeat(48),
+      "",
+    ].join("\n");
+
+    const text = header + ordered.map(formatCardText).join("\n");
+    const blob = new Blob([text], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `project-dd-${type.toLowerCase().replace(/\s+/g, "-")}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setExportPickerOpen(false);
   };
 
   return (
@@ -1111,9 +1156,7 @@ export default function Page() {
         <button onClick={() => setRulebookOpen(true)} className="rounded-md px-3 py-2 text-sm text-left transition hover:bg-neutral-800 text-neutral-300">Draft Rulebook</button>
 
         <div className="mt-auto pt-4 space-y-2">
-          <button onClick={exportJSON} className="w-full rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-3 py-2 text-sm">⬇ Export JSON</button>
-          <button onClick={() => fileInput.current?.click()} disabled={!authed} className="w-full rounded-md bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 border border-neutral-700 px-3 py-2 text-sm">⬆ Import JSON</button>
-          <input ref={fileInput} type="file" accept="application/json,.json" className="hidden" onChange={importJSON} />
+          <button onClick={() => setExportPickerOpen(true)} className="w-full rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-3 py-2 text-sm">⬇ Export Cards</button>
           <p className="text-[10px] text-neutral-600 text-center">{status || "Shared store · auto-synced"}</p>
         </div>
       </aside>
@@ -1224,6 +1267,29 @@ export default function Page() {
 
       {draft && <Editor draft={draft} setDraft={setDraft} keywords={keywords} onAddKeyword={addKeyword} onSave={saveDraft} onCancel={() => setDraft(null)} saving={saving} users={users} races={races} />}
       {rulebookOpen && <RulebookModal onClose={() => setRulebookOpen(false)} />}
+      {exportPickerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={() => setExportPickerOpen(false)}>
+          <div className="w-full max-w-sm rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl p-6 space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-amber-200">Export Cards</h2>
+              <button onClick={() => setExportPickerOpen(false)} className="text-neutral-400 hover:text-white text-xl leading-none">✕</button>
+            </div>
+            <p className="text-sm text-neutral-400">Choose which card database to export as a formatted text file.</p>
+            <div className="space-y-2">
+              {["All", ...CARD_TYPES].map((t) => {
+                const count = t === "All" ? cards.length : cards.filter((c) => c.type === t).length;
+                return (
+                  <button key={t} onClick={() => doExport(t)}
+                    className="w-full flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 hover:border-amber-500/50 px-4 py-2.5 text-sm text-left transition">
+                    <span className="font-medium text-neutral-100">{t === "All" ? "All Card Types" : t}</span>
+                    <span className="text-neutral-500 text-xs">{count} card{count !== 1 ? "s" : ""}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
       {((!presence.michael || Date.now() - presence.michael >= 90000) || (presence.hunter && Date.now() - presence.hunter < 90000)) && (
         <div className="fixed bottom-4 right-4 z-40 pointer-events-none select-none flex items-center gap-3" style={{ fontFamily: "Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif", fontSize: "1.1rem", letterSpacing: "0.05em" }}>
           {(!presence.michael || Date.now() - presence.michael >= 90000) && (
