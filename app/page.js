@@ -466,6 +466,46 @@ function AdminView() {
   );
 }
 
+// ---- changelog view --------------------------------------------------------
+function ChangeLogView({ changelog }) {
+  const actionColor = { created: "text-emerald-400", edited: "text-amber-300", deleted: "text-rose-400" };
+  const actionIcon = { created: "＋", edited: "✎", deleted: "✕" };
+
+  function timeAgo(ts) {
+    const s = Math.floor((Date.now() - ts) / 1000);
+    if (s < 60) return "just now";
+    const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
+    const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
+    const d = Math.floor(h / 24); if (d < 7) return `${d}d ago`;
+    return new Date(ts).toLocaleDateString();
+  }
+
+  return (
+    <div className="max-w-2xl">
+      <h2 className="text-xl font-semibold text-amber-200 mb-1">Change Log</h2>
+      <p className="text-sm text-neutral-400 mb-4">All card additions, edits, and deletions — newest first.</p>
+      {changelog.length === 0 ? (
+        <div className="border border-dashed border-neutral-800 rounded-xl p-10 text-center text-neutral-500">No changes recorded yet.</div>
+      ) : (
+        <div className="border border-neutral-800 rounded-lg overflow-hidden divide-y divide-neutral-800">
+          {changelog.map((e) => (
+            <div key={e.id} className="flex items-center gap-3 px-4 py-2.5 bg-neutral-900 hover:bg-neutral-800/60 transition">
+              <span className={"shrink-0 w-5 text-center font-bold " + (actionColor[e.action] || "text-neutral-400")}>{actionIcon[e.action] || "·"}</span>
+              <span className={"shrink-0 text-xs font-semibold uppercase tracking-wide w-14 " + (actionColor[e.action] || "text-neutral-400")}>{e.action}</span>
+              <span className="flex-grow text-sm text-neutral-100 truncate">
+                <span className="font-semibold">{e.cardName}</span>
+                <span className="text-neutral-500 ml-1.5 text-xs">{e.cardType}</span>
+              </span>
+              <span className="shrink-0 text-xs text-neutral-500">{e.username}</span>
+              <span className="shrink-0 text-xs text-neutral-600 w-16 text-right">{timeAgo(e.timestamp)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ---- rulebook modal --------------------------------------------------------
 function RulebookModal({ onClose }) {
   const [html, setHtml] = useState("");
@@ -573,6 +613,7 @@ export default function Page() {
   const [races, setRaces] = useState([]);
   const [presence, setPresence] = useState({});
   const [cardOrder, setCardOrder] = useState({});
+  const [changelog, setChangelog] = useState([]);
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [view, setView] = useState("Unit");
@@ -604,6 +645,7 @@ export default function Page() {
       setRaces(d.races || []);
       setPresence(d.presence || {});
       setCardOrder(d.cardOrder || {});
+      setChangelog(d.changelog || []);
     } catch (e) { /* offline; keep what we have */ }
   };
 
@@ -786,7 +828,7 @@ export default function Page() {
           </button>
         ))}
         <p className="text-[10px] uppercase tracking-wide text-neutral-600 mt-3 mb-1">Reference & settings</p>
-        {["Keywords", "Lore", "Admin"].map((t) => (
+        {["Keywords", "Lore", "Admin", "Change Log"].map((t) => (
           <button key={t} onClick={() => switchView(t)} className={"rounded-md px-3 py-2 text-sm text-left transition " + (view === t ? "bg-violet-800/40 text-amber-200 border border-violet-600/50" : "hover:bg-neutral-800 text-neutral-300")}>{t}</button>
         ))}
         <button onClick={() => setRulebookOpen(true)} className="rounded-md px-3 py-2 text-sm text-left transition hover:bg-neutral-800 text-neutral-300">Draft Rulebook</button>
@@ -894,6 +936,8 @@ export default function Page() {
           <KeywordsView keywords={keywords} canEdit={authed} onSet={setKeywordsRemote} />
         ) : view === "Lore" ? (
           <LoreView races={races} onSetRaces={setRacesRemote} canEdit={authed} />
+        ) : view === "Change Log" ? (
+          <ChangeLogView changelog={changelog} />
         ) : (
           <AdminView />
         )}
