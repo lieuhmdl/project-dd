@@ -468,7 +468,10 @@ function AdminView() {
 
 // ---- changelog view --------------------------------------------------------
 function ChangeLogView({ changelog }) {
+  const [selected, setSelected] = useState(null);
+
   const actionColor = { created: "text-emerald-400", edited: "text-amber-300", deleted: "text-rose-400" };
+  const actionBg   = { created: "bg-emerald-900/30 border-emerald-700/40", edited: "bg-amber-900/20 border-amber-700/40", deleted: "bg-rose-900/20 border-rose-700/40" };
   const actionIcon = { created: "＋", edited: "✎", deleted: "✕" };
 
   function timeAgo(ts) {
@@ -477,28 +480,106 @@ function ChangeLogView({ changelog }) {
     const m = Math.floor(s / 60); if (m < 60) return `${m}m ago`;
     const h = Math.floor(m / 60); if (h < 24) return `${h}h ago`;
     const d = Math.floor(h / 24); if (d < 7) return `${d}d ago`;
-    return new Date(ts).toLocaleDateString();
+    return new Date(ts).toLocaleString();
+  }
+
+  const SNAP_FIELDS = [
+    ["Name", "name"], ["Type", "type"], ["Rarity", "rarity"],
+    ["Provisions", "provisions"], ["Mana", "mana"],
+    ["Race", "race"], ["Class", "klass"], ["Position", "position"],
+    ["Attack", "attack"], ["Health", "health"],
+    ["Strike", "strike"], ["Passive", "passive"],
+    ["Card Text", "text"], ["Flavor", "flavor"], ["Author", "author"],
+    ["Keywords", "keywords"], ["Tribes", "tribes"], ["Abilities", "abilities"],
+  ];
+
+  function renderVal(card, key) {
+    const v = card?.[key];
+    if (key === "keywords" || key === "tribes") return (v || []).join(", ") || "—";
+    if (key === "abilities") return (v || []).map((a, i) => {
+      const cost = [a.prov ? `${a.prov}P` : "", a.mana ? `${a.mana}M` : ""].filter(Boolean).join(" ");
+      return `${i + 1}. ${cost ? `(${cost}) ` : ""}${a.text}`;
+    }).join("\n") || "—";
+    return String(v ?? "") || "—";
   }
 
   return (
     <div className="max-w-2xl">
       <h2 className="text-xl font-semibold text-amber-200 mb-1">Change Log</h2>
-      <p className="text-sm text-neutral-400 mb-4">All card additions, edits, and deletions — newest first.</p>
+      <p className="text-sm text-neutral-400 mb-4">All card additions, edits, and deletions — click any entry to see details.</p>
       {changelog.length === 0 ? (
         <div className="border border-dashed border-neutral-800 rounded-xl p-10 text-center text-neutral-500">No changes recorded yet.</div>
       ) : (
         <div className="border border-neutral-800 rounded-lg overflow-hidden divide-y divide-neutral-800">
           {changelog.map((e) => (
-            <div key={e.id} className="flex items-center gap-3 px-4 py-2.5 bg-neutral-900 hover:bg-neutral-800/60 transition">
-              <span className={"shrink-0 w-5 text-center font-bold " + (actionColor[e.action] || "text-neutral-400")}>{actionIcon[e.action] || "·"}</span>
-              <span className={"shrink-0 text-xs font-semibold uppercase tracking-wide w-14 " + (actionColor[e.action] || "text-neutral-400")}>{e.action}</span>
-              <span className="flex-grow text-sm text-neutral-100 truncate">
-                <span className="font-semibold">{e.cardName}</span>
-                <span className="text-neutral-500 ml-1.5 text-xs">{e.cardType}</span>
-              </span>
-              <span className="shrink-0 text-xs text-neutral-500">{e.username}</span>
-              <span className="shrink-0 text-xs text-neutral-600 w-16 text-right">{timeAgo(e.timestamp)}</span>
-            </div>
+            <button
+              key={e.id}
+              onClick={() => setSelected(selected?.id === e.id ? null : e)}
+              className={"w-full text-left transition " + (selected?.id === e.id ? "bg-neutral-800" : "bg-neutral-900 hover:bg-neutral-800/60")}
+            >
+              <div className="flex items-center gap-3 px-4 py-2.5">
+                <span className={"shrink-0 w-5 text-center font-bold " + (actionColor[e.action] || "text-neutral-400")}>{actionIcon[e.action] || "·"}</span>
+                <span className={"shrink-0 text-xs font-semibold uppercase tracking-wide w-14 " + (actionColor[e.action] || "text-neutral-400")}>{e.action}</span>
+                <span className="flex-grow text-sm text-neutral-100 truncate">
+                  <span className="font-semibold">{e.cardName}</span>
+                  <span className="text-neutral-500 ml-1.5 text-xs">{e.cardType}</span>
+                </span>
+                <span className="shrink-0 text-xs text-neutral-500">{e.username}</span>
+                <span className="shrink-0 text-xs text-neutral-600 w-16 text-right">{timeAgo(e.timestamp)}</span>
+                <span className="shrink-0 text-neutral-600 text-xs">{selected?.id === e.id ? "▲" : "▼"}</span>
+              </div>
+
+              {selected?.id === e.id && (
+                <div className={"mx-3 mb-3 rounded-lg border p-3 text-left " + (actionBg[e.action] || "bg-neutral-800 border-neutral-700")}>
+                  {/* Edits: show a before/after diff table */}
+                  {e.action === "edited" && e.diff && e.diff.length > 0 && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-widest text-neutral-400 mb-2">Fields changed</p>
+                      <div className="space-y-2">
+                        {e.diff.map((d) => (
+                          <div key={d.label}>
+                            <p className="text-[10px] uppercase tracking-wide text-neutral-500 mb-0.5">{d.label}</p>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div className="bg-rose-950/50 border border-rose-800/40 rounded px-2 py-1 text-rose-300 whitespace-pre-wrap break-words">
+                                <span className="text-rose-600 text-[10px] mr-1">before</span>{d.before}
+                              </div>
+                              <div className="bg-emerald-950/50 border border-emerald-800/40 rounded px-2 py-1 text-emerald-300 whitespace-pre-wrap break-words">
+                                <span className="text-emerald-600 text-[10px] mr-1">after</span>{d.after}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {e.action === "edited" && (!e.diff || e.diff.length === 0) && (
+                    <p className="text-sm text-neutral-500">No field differences recorded.</p>
+                  )}
+
+                  {/* Creates and deletes: show snapshot */}
+                  {(e.action === "created" || e.action === "deleted") && e.snapshot && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-widest text-neutral-400 mb-2">Card snapshot</p>
+                      <div className="space-y-1">
+                        {SNAP_FIELDS.map(([label, key]) => {
+                          const val = renderVal(e.snapshot, key);
+                          if (!val || val === "—") return null;
+                          return (
+                            <div key={key} className="grid grid-cols-[100px_1fr] gap-2 text-xs">
+                              <span className="text-neutral-500 uppercase tracking-wide text-[10px] pt-0.5">{label}</span>
+                              <span className="text-neutral-200 whitespace-pre-wrap break-words">{val}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {(e.action === "created" || e.action === "deleted") && !e.snapshot && (
+                    <p className="text-sm text-neutral-500">No snapshot available for this entry.</p>
+                  )}
+                </div>
+              )}
+            </button>
           ))}
         </div>
       )}
