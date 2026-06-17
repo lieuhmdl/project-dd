@@ -62,7 +62,7 @@ function CardTile({ card, canEdit, onEdit, onDelete }) {
     ? [card.strike ? `Strike: ${card.strike}` : "", ...(card.abilities || []).map(abilityLine).filter(Boolean).map((a) => `\u2022 ${a}`), card.passive ? `Passive: ${card.passive}` : ""].filter(Boolean)
     : [...(card.text ? [card.text] : []), ...(hasActiveAbilities ? (card.abilities || []).map(abilityLine).filter(Boolean).map((a) => `\u2022 ${a}`) : [])];
   return (
-    <div className="group relative w-[260px] rounded-xl border border-neutral-700 bg-neutral-900 shadow-lg overflow-hidden flex flex-col">
+    <div className="group relative w-full rounded-xl border border-neutral-700 bg-neutral-900 shadow-lg overflow-hidden flex flex-col">
       <div className="flex items-center justify-between gap-2 px-3 py-2" style={{ background: "#3b2d52" }}>
         <span className="font-semibold text-[15px] text-amber-200 truncate">{card.name || "(unnamed)"}</span>
         <span className="shrink-0 text-[11px] font-bold text-amber-100/90 bg-black/25 rounded px-1.5 py-0.5">P {card.provisions || 0} · M {card.mana || 0}</span>
@@ -903,6 +903,7 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
   const [deckSaving, setDeckSaving] = useState(false);
   const [deckStatus, setDeckStatus] = useState("");
   const [dbSearch, setDbSearch] = useState("");
+  const [mobileTab, setMobileTab] = useState("browse");
   const [viewDeck, setViewDeck] = useState(null);
   const [previewCard, setPreviewCard] = useState(null);
   const [previewPos, setPreviewPos] = useState({ x: 0, y: 0 });
@@ -964,13 +965,13 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
   const openDeck = (d) => {
     setDeckId(d.id); setDeckName(d.name || ""); setDeckDesc(d.description || "");
     setDeckAuthor(d.author || ""); setCompanion(d.companion || null); setDeck(d.cards || []);
-    setDeckStatus(""); setStep("building");
+    setDeckStatus(""); setMobileTab("browse"); setStep("building");
   };
 
   const copyDeck = (d) => {
     setDeckId(null); setDeckName(`${d.name || "Untitled"} (Copy)`); setDeckDesc(d.description || "");
     setDeckAuthor(username || ""); setCompanion(d.companion || null); setDeck(d.cards || []);
-    setDeckStatus(""); setStep("building");
+    setDeckStatus(""); setMobileTab("browse"); setStep("building");
   };
 
   const backToDatabase = () => { setPreviewCard(null); clearTimeout(hoverTimer.current); setStep("database"); };
@@ -1130,7 +1131,7 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-w-3xl">
             {companions.map(c => (
-              <button key={c.id} onClick={() => { setCompanion(c); setStep("building"); }}
+              <button key={c.id} onClick={() => { setCompanion(c); setMobileTab("browse"); setStep("building"); }}
                 className="rounded-xl border border-neutral-700 bg-neutral-900 hover:border-amber-500 hover:bg-neutral-800 p-4 text-left transition group">
                 <span className="inline-block text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded mb-1.5"
                   style={{ background: c.type === "Ancient Legend" ? "#8b5cf622" : "#f59e0b22", color: c.type === "Ancient Legend" ? "#a78bfa" : "#f59e0b" }}>{c.type}</span>
@@ -1149,10 +1150,24 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
   // ---- step: building (two-panel layout) ------------------------------------
   return (
     <>
-      <div className="flex -m-6 overflow-hidden" style={{ height: "100vh" }}>
+      <div className="flex flex-col md:flex-row md:-m-6 md:overflow-hidden md:h-screen">
+
+        {/* Mobile tab switcher */}
+        <div className="flex md:hidden border-b border-neutral-800 bg-neutral-950 shrink-0">
+          <button
+            onClick={() => setMobileTab("browse")}
+            className={"flex-1 py-2.5 text-sm font-medium border-b-2 transition " + (mobileTab === "browse" ? "text-amber-200 border-amber-500" : "text-neutral-500 border-transparent hover:text-neutral-300")}>
+            Browse Cards
+          </button>
+          <button
+            onClick={() => setMobileTab("deck")}
+            className={"flex-1 py-2.5 text-sm font-medium border-b-2 transition " + (mobileTab === "deck" ? "text-amber-200 border-amber-500" : "text-neutral-500 border-transparent hover:text-neutral-300")}>
+            Deck ({deckTotal})
+          </button>
+        </div>
 
         {/* LEFT: card browser */}
-        <div className="flex flex-col flex-grow border-r border-neutral-800 overflow-hidden">
+        <div className={"flex-col flex-grow border-r border-neutral-800 overflow-hidden " + (mobileTab === "deck" ? "hidden md:flex" : "flex")}>
           {/* filter bar */}
           <div className="flex gap-2 items-center p-3 border-b border-neutral-800 bg-neutral-950/60 shrink-0">
             <button onClick={backToDatabase} className="shrink-0 text-xs text-neutral-500 hover:text-amber-300 transition pr-1">← Decks</button>
@@ -1215,7 +1230,7 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
         </div>
 
         {/* RIGHT: deck panel */}
-        <div className="w-72 shrink-0 flex flex-col bg-neutral-900 overflow-hidden">
+        <div className={"w-full md:w-72 md:shrink-0 flex-col bg-neutral-900 overflow-hidden " + (mobileTab === "browse" ? "hidden md:flex" : "flex")}>
 
           {/* deck name + author + companion */}
           <div className="p-3 border-b border-neutral-800 shrink-0" style={{ background: "rgba(139,92,246,0.08)" }}>
@@ -1503,6 +1518,7 @@ export default function Page() {
   const [cardOrder, setCardOrder] = useState({});
   const [changelog, setChangelog] = useState([]);
   const [decks, setDecks] = useState([]);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [view, setView] = useState("Unit");
@@ -1594,7 +1610,7 @@ export default function Page() {
   const [filterTribe, setFilterTribe] = useState("");
 
   // reset search/filters when switching tabs
-  const switchView = (v) => { setView(v); setSearch(""); setFilterRace(""); setFilterClass(""); setFilterKeyword(""); setFilterTribe(""); setFilterOpen(false); };
+  const switchView = (v) => { setView(v); setSearch(""); setFilterRace(""); setFilterClass(""); setFilterKeyword(""); setFilterTribe(""); setFilterOpen(false); setSidebarOpen(false); };
 
   const isTypeView = CARD_TYPES.includes(view);
 
@@ -1748,8 +1764,28 @@ export default function Page() {
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex">
-      <aside className="w-60 shrink-0 border-r border-neutral-800 bg-neutral-900/60 p-4 flex flex-col gap-1">
-        <div className="mb-2"><h1 className="text-xl font-bold text-amber-300 leading-tight">PROJECT DD</h1><p className="text-xs text-neutral-500">Card Builder · shared</p></div>
+
+      {/* ── Mobile header bar ── */}
+      <div className="md:hidden fixed top-0 left-0 right-0 z-30 h-14 flex items-center gap-3 px-4 bg-neutral-950 border-b border-neutral-800 shrink-0">
+        <button onClick={() => setSidebarOpen(o => !o)} className="text-neutral-400 hover:text-white p-1 -ml-1">
+          <svg width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 6h16M4 12h16M4 18h16"/>
+          </svg>
+        </button>
+        <span className="font-bold text-amber-300">PROJECT DD</span>
+        <span className="text-neutral-500 text-sm truncate">· {view}</span>
+      </div>
+
+      {/* ── Sidebar overlay (mobile) ── */}
+      {sidebarOpen && (
+        <div className="md:hidden fixed inset-0 z-40 bg-black/60" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      <aside className={"fixed md:static inset-y-0 left-0 z-50 w-60 shrink-0 border-r border-neutral-800 bg-neutral-950 md:bg-neutral-900/60 p-4 flex flex-col gap-1 overflow-y-auto transition-transform duration-200 " + (sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0")}>
+        <div className="mb-2 flex items-center justify-between">
+          <div><h1 className="text-xl font-bold text-amber-300 leading-tight">PROJECT DD</h1><p className="text-xs text-neutral-500 hidden md:block">Card Builder · shared</p></div>
+          <button className="md:hidden text-neutral-500 hover:text-white p-1" onClick={() => setSidebarOpen(false)}>✕</button>
+        </div>
 
         {/* sign-in box */}
         <div className="rounded-lg border border-neutral-800 bg-neutral-900 p-2 mb-2">
@@ -1783,15 +1819,15 @@ export default function Page() {
         {["Keywords", "Lore", "Admin", "Change Log"].map((t) => (
           <button key={t} onClick={() => switchView(t)} className={"rounded-md px-3 py-2 text-sm text-left transition " + (view === t ? "bg-violet-800/40 text-amber-200 border border-violet-600/50" : "hover:bg-neutral-800 text-neutral-300")}>{t}</button>
         ))}
-        <button onClick={() => setRulebookOpen(true)} className="rounded-md px-3 py-2 text-sm text-left transition hover:bg-neutral-800 text-neutral-300">Draft Rulebook</button>
+        <button onClick={() => { setRulebookOpen(true); setSidebarOpen(false); }} className="rounded-md px-3 py-2 text-sm text-left transition hover:bg-neutral-800 text-neutral-300">Draft Rulebook</button>
 
         <div className="mt-auto pt-4 space-y-2">
-          <button onClick={() => setExportPickerOpen(true)} className="w-full rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-3 py-2 text-sm">⬇ Export Cards</button>
+          <button onClick={() => { setExportPickerOpen(true); setSidebarOpen(false); }} className="w-full rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-3 py-2 text-sm">⬇ Export Cards</button>
           <p className="text-[10px] text-neutral-600 text-center">{status || "Shared store · auto-synced"}</p>
         </div>
       </aside>
 
-      <main className="flex-grow p-6 overflow-x-hidden">
+      <main className="flex-grow overflow-x-hidden pt-14 md:pt-6 pb-4 md:pb-6 px-4 md:px-6">
         {backendError && (
           <div className="mb-5 rounded-lg border border-amber-700/50 bg-amber-900/20 text-amber-200 px-4 py-3 text-sm">
             Backend isn't connected yet. Finish the storage setup (create the Upstash Redis store in Vercel and redeploy), then refresh.
@@ -1864,7 +1900,7 @@ export default function Page() {
             ) : (
               <>
                 {canDrag && <p className="text-[10px] text-neutral-600 mb-2">Drag cards to reorder · changes visible to all on refresh</p>}
-                <div className="flex flex-wrap gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                   {visible.map((c) => (
                     <div
                       key={c.id}
