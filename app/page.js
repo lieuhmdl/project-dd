@@ -748,6 +748,144 @@ function PieChart({ slices, sz = 210 }) {
   );
 }
 
+// ---- cost bar chart (used by DeckViewModal) ---------------------------------
+function CostBarChart({ data, color, label }) {
+  const max = Math.max(...data.map(d => d.value), 1);
+  const BAR_W = 22, GAP = 3, H = 72, PAD_T = 18, PAD_B = 20;
+  const totalW = data.length * (BAR_W + GAP) - GAP;
+  return (
+    <div className="flex flex-col items-center">
+      <p className="text-[10px] uppercase tracking-wide font-bold mb-1" style={{ color }}>{label}</p>
+      <svg width={totalW} height={H + PAD_T + PAD_B} style={{ overflow: "visible" }}>
+        {data.map((d, i) => {
+          const barH = d.value > 0 ? Math.max(3, Math.round((d.value / max) * H)) : 0;
+          const x = i * (BAR_W + GAP);
+          return (
+            <g key={i}>
+              {barH > 0 && <rect x={x} y={PAD_T + H - barH} width={BAR_W} height={barH} fill={color} rx={2} opacity={0.8} />}
+              {d.value > 0 && <text x={x + BAR_W / 2} y={PAD_T + H - barH - 3} textAnchor="middle" fill="#d4d4d4" fontSize={9} fontWeight="600">{d.value}</text>}
+              <text x={x + BAR_W / 2} y={PAD_T + H + 14} textAnchor="middle" fill="#737373" fontSize={9}>{d.label}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+// ---- deck view modal --------------------------------------------------------
+function DeckViewModal({ deck, authed, onSave, onEdit, onDelete, onClose }) {
+  const [desc, setDesc] = useState(deck.description || "");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const DECK_ORDER  = ["Unit", "Event", "Artifact"];
+  const TYPE_COLORS = { "Unit": "#8b5cf6", "Event": "#10b981", "Artifact": "#3b82f6" };
+  const TYPE_PLURAL = { "Unit": "Units", "Event": "Events", "Artifact": "Artifacts" };
+
+  const allEntries = [
+    ...(deck.companion ? [{ card: deck.companion, count: 1 }] : []),
+    ...(deck.cards || []),
+  ];
+  const deckTotal = (deck.cards || []).reduce((s, e) => s + e.count, 0);
+
+  const makeDist = (field) =>
+    Array.from({ length: 8 }, (_, i) => ({
+      label: i === 7 ? "7+" : String(i),
+      value: allEntries.reduce((s, { card, count }) => {
+        const v = parseInt(card[field]) || 0;
+        return s + (i === 7 ? (v >= 7 ? count : 0) : (v === i ? count : 0));
+      }, 0),
+    }));
+
+  const grouped = DECK_ORDER.map(type => ({
+    type,
+    entries: (deck.cards || []).filter(d => d.card.type === type).sort((a, b) => a.card.name.localeCompare(b.card.name)),
+  })).filter(g => g.entries.length > 0);
+
+  const saveDesc = async () => {
+    setSaving(true);
+    await onSave({ ...deck, description: desc });
+    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={onClose}>
+      <div className="w-full max-w-2xl flex flex-col rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl overflow-hidden" style={{ maxHeight: "90vh" }} onClick={e => e.stopPropagation()}>
+        {/* header */}
+        <div className="flex items-start justify-between px-5 py-4 border-b border-neutral-800 shrink-0" style={{ background: "rgba(139,92,246,0.08)" }}>
+          <div>
+            <h2 className="text-xl font-bold text-amber-200">{deck.name || "(untitled)"}</h2>
+            {deck.author && <p className="text-sm text-neutral-400">by {deck.author}</p>}
+            <p className="text-xs text-neutral-600 mt-0.5">{deckTotal} / 40 cards</p>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0 ml-4">
+            {authed && <button onClick={() => { onClose(); onEdit(deck); }} className="text-xs border border-neutral-600 hover:border-amber-500 text-neutral-300 hover:text-amber-300 rounded px-2.5 py-1 transition">Edit</button>}
+            {authed && <button onClick={() => { onDelete(deck.id); onClose(); }} className="text-xs bg-rose-700/60 hover:bg-rose-700 text-white rounded px-2.5 py-1 transition">Delete</button>}
+            <button onClick={onClose} className="text-neutral-400 hover:text-white text-xl leading-none ml-1">✕</button>
+          </div>
+        </div>
+
+        {/* body */}
+        <div className="flex-grow overflow-y-auto">
+          <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-neutral-800">
+            {/* left: description + deck list */}
+            <div className="p-5 space-y-5">
+              <div>
+                <label className="block text-[10px] uppercase tracking-wide text-neutral-500 mb-1.5 font-bold">Description / Strategy Guide</label>
+                {authed ? (
+                  <>
+                    <textarea className={inputCls + " text-sm"} rows={4} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Describe your strategy, win conditions, key combos…" />
+                    {desc !== (deck.description || "") && (
+                      <button onClick={saveDesc} disabled={saving} className="mt-1.5 text-xs rounded-md bg-violet-700 hover:bg-violet-600 disabled:opacity-50 text-white px-3 py-1 transition">
+                        {saving ? "Saving…" : saved ? "Saved!" : "Save Description"}
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <p className="text-sm text-neutral-300 whitespace-pre-wrap">{desc || <span className="text-neutral-600 italic">No description yet.</span>}</p>
+                )}
+              </div>
+              <div>
+                <p className="text-[10px] uppercase tracking-wide text-neutral-500 mb-2 font-bold">Deck List</p>
+                {deck.companion && (
+                  <div className="mb-3">
+                    <p className="text-[10px] uppercase tracking-wide font-bold text-violet-400 mb-0.5">Companion</p>
+                    <p className="text-sm text-neutral-100">{deck.companion.name}</p>
+                    <p className="text-[11px] text-neutral-500">{[deck.companion.race, deck.companion.klass].filter(Boolean).join(" ")}</p>
+                  </div>
+                )}
+                {grouped.map(g => (
+                  <div key={g.type} className="mb-2">
+                    <p className="text-[10px] uppercase tracking-wide font-bold mb-1" style={{ color: TYPE_COLORS[g.type] }}>
+                      {TYPE_PLURAL[g.type]} ({g.entries.reduce((s, e) => s + e.count, 0)})
+                    </p>
+                    {g.entries.map(({ card, count }) => (
+                      <div key={card.id} className="flex items-center gap-1.5 py-0.5 text-sm">
+                        <span className="text-neutral-500 text-xs w-5 text-right shrink-0">×{count}</span>
+                        <span className="text-neutral-200 flex-grow">{card.name}</span>
+                        <span className="text-neutral-600 text-xs shrink-0">P{card.provisions||0} M{card.mana||0}</span>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* right: cost breakdown */}
+            <div className="p-5">
+              <p className="text-[10px] uppercase tracking-wide text-neutral-500 mb-5 font-bold">Cost Breakdown</p>
+              <div className="space-y-8 flex flex-col items-center">
+                <CostBarChart data={makeDist("provisions")} color="#f59e0b" label="Provisions" />
+                <CostBarChart data={makeDist("mana")} color="#8b5cf6" label="Mana" />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---- deckbuilder view -------------------------------------------------------
 function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, onDeleteDeck }) {
   // step: "database" | "companion" | "building"
@@ -763,6 +901,8 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
   const [exportOpen, setExportOpen] = useState(false);
   const [deckSaving, setDeckSaving] = useState(false);
   const [deckStatus, setDeckStatus] = useState("");
+  const [dbSearch, setDbSearch] = useState("");
+  const [viewDeck, setViewDeck] = useState(null);
   const [previewCard, setPreviewCard] = useState(null);
   const [previewPos, setPreviewPos] = useState({ x: 0, y: 0 });
   const hoverTimer = useRef(null);
@@ -877,52 +1017,84 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
 
   // ---- step: database -------------------------------------------------------
   if (step === "database") {
+    const filteredDecks = [...decks]
+      .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+      .filter(d => {
+        if (!dbSearch.trim()) return true;
+        const q = dbSearch.toLowerCase();
+        return [d.name, d.author, d.companion?.name, d.description].some(v => v?.toLowerCase().includes(q));
+      });
     return (
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <h2 className="text-2xl font-bold text-neutral-100">Deckbuilder</h2>
-            <p className="text-sm text-neutral-500">{decks.length} deck{decks.length !== 1 ? "s" : ""} in the database</p>
+      <>
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <h2 className="text-2xl font-bold text-neutral-100">Deckbuilder</h2>
+              <p className="text-sm text-neutral-500">{decks.length} deck{decks.length !== 1 ? "s" : ""} in the database</p>
+            </div>
+            {authed && (
+              <button onClick={startNewDeck} className="rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-semibold px-4 py-2 text-sm shadow">
+                + Create New Deck
+              </button>
+            )}
           </div>
-          {authed && (
-            <button onClick={startNewDeck} className="rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-semibold px-4 py-2 text-sm shadow">
-              + Create New Deck
-            </button>
+          {decks.length > 0 && (
+            <div className="mb-4">
+              <input className={inputCls} value={dbSearch} onChange={e => setDbSearch(e.target.value)} placeholder="Search by deck name, author, or companion…" />
+            </div>
+          )}
+          {filteredDecks.length === 0 ? (
+            <div className="border border-dashed border-neutral-800 rounded-xl p-16 text-center text-neutral-500">
+              {decks.length === 0
+                ? (authed ? "No decks yet. Click \"+ Create New Deck\" to get started." : "No decks yet. Sign in to create a deck.")
+                : "No decks match your search."}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {filteredDecks.map(d => {
+                const total = (d.cards || []).reduce((s, e) => s + e.count, 0);
+                return (
+                  <div key={d.id} onClick={() => setViewDeck(d)}
+                    className="rounded-xl border border-neutral-700 bg-neutral-900 hover:border-amber-500/60 hover:bg-neutral-800/60 p-4 cursor-pointer transition group relative">
+                    <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition">
+                      {authed && (
+                        <button onClick={ev => { ev.stopPropagation(); openDeck(d); }}
+                          className="text-[11px] bg-neutral-700 hover:bg-neutral-600 text-white rounded px-1.5 py-0.5">Edit</button>
+                      )}
+                      {authed && (
+                        <button onClick={ev => { ev.stopPropagation(); onDeleteDeck(d.id); }}
+                          className="text-[11px] bg-rose-700 hover:bg-rose-600 text-white rounded px-1.5 py-0.5">✕</button>
+                      )}
+                    </div>
+                    <div className="font-semibold text-amber-200 text-base truncate pr-16">{d.name || "(untitled)"}</div>
+                    {d.author && <div className="text-[11px] text-neutral-500 mt-0.5">by {d.author}</div>}
+                    <div className="text-xs text-neutral-400 mt-1.5">
+                      Companion: <span className="text-neutral-200">{d.companion?.name || "(none)"}</span>
+                    </div>
+                    {d.description && <p className="text-[11px] text-neutral-500 mt-1 line-clamp-2">{d.description}</p>}
+                    <div className="flex items-center gap-2 mt-2">
+                      <div className="flex-grow h-1 rounded-full bg-neutral-800 overflow-hidden">
+                        <div className="h-full rounded-full bg-amber-600/60" style={{ width: `${Math.min((total / 40) * 100, 100)}%` }} />
+                      </div>
+                      <span className="text-[10px] text-neutral-500 shrink-0">{total} / 40 cards</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
-        {decks.length === 0 ? (
-          <div className="border border-dashed border-neutral-800 rounded-xl p-16 text-center text-neutral-500">
-            No decks yet.{authed ? " Click \"+ Create New Deck\" to get started." : " Sign in to create a deck."}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {[...decks].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).map(d => {
-              const total = (d.cards || []).reduce((s, e) => s + e.count, 0);
-              return (
-                <div key={d.id} onClick={() => openDeck(d)}
-                  className="rounded-xl border border-neutral-700 bg-neutral-900 hover:border-amber-500/60 hover:bg-neutral-800/60 p-4 cursor-pointer transition group relative">
-                  {authed && (
-                    <button onClick={ev => { ev.stopPropagation(); onDeleteDeck(d.id); }}
-                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-[11px] bg-rose-700 hover:bg-rose-600 text-white rounded px-1.5 py-0.5 transition">✕</button>
-                  )}
-                  <div className="font-semibold text-amber-200 text-base truncate pr-6">{d.name || "(untitled)"}</div>
-                  {d.author && <div className="text-[11px] text-neutral-500 mt-0.5">by {d.author}</div>}
-                  <div className="text-xs text-neutral-400 mt-1.5">
-                    Companion: <span className="text-neutral-200">{d.companion?.name || "(none)"}</span>
-                  </div>
-                  {d.description && <p className="text-[11px] text-neutral-500 mt-1 line-clamp-2">{d.description}</p>}
-                  <div className="flex items-center gap-2 mt-2">
-                    <div className="flex-grow h-1 rounded-full bg-neutral-800 overflow-hidden">
-                      <div className="h-full rounded-full bg-amber-600/60" style={{ width: `${Math.min((total / 40) * 100, 100)}%` }} />
-                    </div>
-                    <span className="text-[10px] text-neutral-500 shrink-0">{total} / 40 cards</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+        {viewDeck && (
+          <DeckViewModal
+            deck={viewDeck}
+            authed={authed}
+            onSave={async (updated) => { const r = await onSaveDeck(updated); setViewDeck(updated); return r; }}
+            onEdit={(d) => { setViewDeck(null); openDeck(d); }}
+            onDelete={(id) => { onDeleteDeck(id); setViewDeck(null); }}
+            onClose={() => setViewDeck(null)}
+          />
         )}
-      </div>
+      </>
     );
   }
 
@@ -971,12 +1143,12 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
           <div className="flex gap-2 items-center p-3 border-b border-neutral-800 bg-neutral-950/60 shrink-0">
             <button onClick={backToDatabase} className="shrink-0 text-xs text-neutral-500 hover:text-amber-300 transition pr-1">← Decks</button>
             <input
-              className={inputCls + " flex-grow text-sm"}
+              className="flex-grow min-w-0 rounded-md bg-neutral-800 border border-neutral-700 px-2.5 py-1.5 text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-amber-500/60 focus:border-amber-500/60"
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search by name, race, class, keyword…"
             />
-            <select className={inputCls + " w-36 text-sm shrink-0"} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+            <select className={inputCls + " w-24 shrink-0 text-sm"} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
               <option value="All">All Types</option>
               {BROWSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
