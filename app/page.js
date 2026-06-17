@@ -694,10 +694,10 @@ function RulebookModal({ onClose }) {
 }
 
 // ---- pie chart -------------------------------------------------------------
-function PieChart({ slices }) {
+function PieChart({ slices, sz = 210 }) {
   const [hovered, setHovered] = useState(null);
   const [tooltip, setTooltip] = useState(null);
-  const size = 210, cx = 105, cy = 105, r = 88;
+  const size = sz, cx = sz / 2, cy = sz / 2, r = Math.round(sz * 88 / 210);
   const total = slices.reduce((s, d) => s + d.value, 0);
 
   if (!total) return (
@@ -742,6 +742,272 @@ function PieChart({ slices }) {
         <div className="fixed z-[999] pointer-events-none px-2.5 py-1.5 rounded-lg bg-neutral-800 border border-neutral-700 text-xs text-white shadow-xl" style={{ left: tooltip.x + 14, top: tooltip.y - 30 }}>
           <span className="font-semibold">{tooltip.label}</span>
           <span className="text-neutral-400 ml-2">{tooltip.value} ({tooltip.pct}%)</span>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ---- deckbuilder view -------------------------------------------------------
+function DeckbuilderView({ cards }) {
+  const [companion, setCompanion] = useState(null);
+  const [deck, setDeck] = useState([]);
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("All");
+  const [exportOpen, setExportOpen] = useState(false);
+
+  const DECK_MAX = 40;
+  const BROWSE_TYPES = ["Unit", "Ancient Relic", "Event", "Artifact"];
+  const DECK_ORDER  = ["Unit", "Ancient Relic", "Event", "Artifact"];
+  const TYPE_COLORS = { "Unit": "#8b5cf6", "Ancient Relic": "#f59e0b", "Event": "#10b981", "Artifact": "#3b82f6" };
+  const TYPE_PLURAL = { "Unit": "Units", "Ancient Relic": "Ancient Relics", "Event": "Events", "Artifact": "Artifacts" };
+
+  const legends  = cards.filter(c => c.type === "Ancient Legend");
+  const deckTotal = deck.reduce((s, d) => s + d.count, 0);
+
+  const browseable = cards.filter(c => {
+    if (!BROWSE_TYPES.includes(c.type)) return false;
+    if (typeFilter !== "All" && c.type !== typeFilter) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return [c.name, c.race, c.klass, ...(c.keywords || []), ...(c.tribes || [])].some(v => v?.toLowerCase().includes(q));
+    }
+    return true;
+  });
+
+  const addCard = (card) => {
+    if (deckTotal >= DECK_MAX) return;
+    setDeck(prev => {
+      const i = prev.findIndex(d => d.card.id === card.id);
+      if (i >= 0) return prev.map((d, j) => j === i ? { ...d, count: d.count + 1 } : d);
+      return [...prev, { card, count: 1 }];
+    });
+  };
+
+  const removeCard = (cardId) => {
+    setDeck(prev => {
+      const i = prev.findIndex(d => d.card.id === cardId);
+      if (i < 0) return prev;
+      if (prev[i].count <= 1) return prev.filter((_, j) => j !== i);
+      return prev.map((d, j) => j === i ? { ...d, count: d.count - 1 } : d);
+    });
+  };
+
+  const grouped = DECK_ORDER.map(type => ({
+    type,
+    entries: deck.filter(d => d.card.type === type).sort((a, b) => a.card.name.localeCompare(b.card.name)),
+  })).filter(g => g.entries.length > 0);
+
+  const pieSlices = DECK_ORDER.map(type => {
+    const count = deck.filter(d => d.card.type === type).reduce((s, d) => s + d.count, 0);
+    return count ? { label: type, value: count, color: TYPE_COLORS[type] } : null;
+  }).filter(Boolean);
+
+  const exportText = () => {
+    const lines = ["Companion:", companion ? (companion.name || "(unnamed)") : "(none selected)", ""];
+    DECK_ORDER.forEach(type => {
+      const entries = deck.filter(d => d.card.type === type);
+      if (!entries.length) return;
+      lines.push(`${TYPE_PLURAL[type]}:`);
+      [...entries].sort((a, b) => a.card.name.localeCompare(b.card.name)).forEach(d => lines.push(`${d.card.name} x${d.count}`));
+      lines.push("");
+    });
+    return lines.join("\n").trimEnd();
+  };
+
+  // ---- companion picker ----
+  if (!companion) {
+    return (
+      <div>
+        <h2 className="text-xl font-semibold text-amber-200 mb-1">Deckbuilder</h2>
+        <p className="text-sm text-neutral-400 mb-6">Start by choosing your Companion — they define your deck's identity.</p>
+        {legends.length === 0 ? (
+          <div className="border border-dashed border-neutral-800 rounded-xl p-16 text-center text-neutral-500">
+            No Ancient Legend cards yet. Add some in the card database first.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-w-3xl">
+            {legends.map(c => (
+              <button key={c.id} onClick={() => setCompanion(c)}
+                className="rounded-xl border border-neutral-700 bg-neutral-900 hover:border-amber-500 hover:bg-neutral-800 p-4 text-left transition group">
+                <div className="font-semibold text-amber-200 text-sm truncate group-hover:text-amber-100">{c.name || "(unnamed)"}</div>
+                <div className="text-xs text-neutral-400 mt-0.5">{[c.race, c.klass].filter(Boolean).join(" ")}{c.rarity ? ` · ${c.rarity}` : ""}</div>
+                {c.tribes?.length ? <div className="text-xs text-violet-400 mt-1">{c.tribes.join(", ")}</div> : null}
+                {c.passive ? <p className="text-[10px] text-neutral-500 mt-1.5 line-clamp-2">{c.passive}</p> : null}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---- main two-panel layout ----
+  return (
+    <>
+      <div className="flex -m-6 overflow-hidden" style={{ height: "100vh" }}>
+
+        {/* LEFT: card browser */}
+        <div className="flex flex-col flex-grow border-r border-neutral-800 overflow-hidden">
+          {/* filter bar */}
+          <div className="flex gap-2 items-center p-3 border-b border-neutral-800 bg-neutral-950/60 shrink-0">
+            <input
+              className={inputCls + " flex-grow text-sm"}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search by name, race, class, keyword…"
+            />
+            <select className={inputCls + " w-40 text-sm shrink-0"} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+              <option value="All">All Types</option>
+              {BROWSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            {(search || typeFilter !== "All") && (
+              <button onClick={() => { setSearch(""); setTypeFilter("All"); }}
+                className="shrink-0 px-2.5 py-1.5 rounded-md bg-neutral-800 border border-neutral-700 text-xs text-neutral-400 hover:text-white transition">Clear</button>
+            )}
+          </div>
+
+          {/* card rows */}
+          <div className="flex-grow overflow-y-auto">
+            {browseable.length === 0 ? (
+              <p className="text-neutral-600 text-sm p-8 text-center">No cards match your filters.</p>
+            ) : (
+              <div className="divide-y divide-neutral-800/50">
+                {browseable.map(c => {
+                  const inDeck = deck.find(d => d.card.id === c.id);
+                  const canAdd = deckTotal < DECK_MAX;
+                  return (
+                    <div key={c.id} className="flex items-center gap-2 px-3 py-2.5 hover:bg-neutral-800/40 transition group">
+                      <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
+                        style={{ background: TYPE_COLORS[c.type] + "22", color: TYPE_COLORS[c.type] }}>{c.type}</span>
+                      <span className="flex-grow text-sm text-neutral-100 font-medium truncate">{c.name || "(unnamed)"}</span>
+                      {(c.race || c.klass) && (
+                        <span className="shrink-0 text-[11px] text-neutral-500 hidden md:block truncate max-w-[130px]">{[c.race, c.klass].filter(Boolean).join(" ")}</span>
+                      )}
+                      <span className="shrink-0 text-[11px] text-amber-600/80">P{c.provisions || 0} M{c.mana || 0}</span>
+                      {inDeck
+                        ? <span className="shrink-0 text-xs text-violet-300 font-bold w-6 text-center">×{inDeck.count}</span>
+                        : <span className="w-6 shrink-0" />}
+                      <button onClick={() => addCard(c)} disabled={!canAdd} title="Add to deck"
+                        className={"shrink-0 w-7 h-7 rounded-md flex items-center justify-center text-base font-bold transition " + (canAdd ? "text-emerald-400 hover:bg-emerald-900/30 hover:text-emerald-300" : "text-neutral-700 cursor-not-allowed")}>+</button>
+                      {inDeck && (
+                        <button onClick={() => removeCard(c.id)} title="Remove one"
+                          className="shrink-0 w-7 h-7 rounded-md flex items-center justify-center text-base font-bold text-rose-500 hover:bg-rose-900/30 hover:text-rose-400 transition">−</button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT: deck panel */}
+        <div className="w-72 shrink-0 flex flex-col bg-neutral-900 overflow-hidden">
+
+          {/* companion header */}
+          <div className="p-3 border-b border-neutral-800 shrink-0" style={{ background: "rgba(139,92,246,0.08)" }}>
+            <div className="flex items-center justify-between mb-0.5">
+              <span className="text-[9px] uppercase tracking-widest font-bold text-violet-400">Companion</span>
+              <button onClick={() => { setCompanion(null); setDeck([]); }}
+                className="text-[10px] text-neutral-500 hover:text-amber-300 transition">↩ Change</button>
+            </div>
+            <div className="font-semibold text-amber-200 text-sm leading-snug">{companion.name || "(unnamed)"}</div>
+            <div className="text-[11px] text-neutral-400 mt-0.5">
+              {[companion.race, companion.klass].filter(Boolean).join(" ")}{companion.rarity ? ` · ${companion.rarity}` : ""}
+            </div>
+            {companion.tribes?.length ? <div className="text-[10px] text-violet-400 mt-0.5">{companion.tribes.join(", ")}</div> : null}
+            {companion.passive ? <p className="text-[10px] text-neutral-500 mt-1 line-clamp-2">{companion.passive}</p> : null}
+          </div>
+
+          {/* card count + progress */}
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-800 shrink-0">
+            <span className="text-sm font-semibold text-neutral-200">{deckTotal}</span>
+            <span className="text-sm text-neutral-500">/ {DECK_MAX}</span>
+            <div className="flex-grow h-1.5 rounded-full bg-neutral-800 overflow-hidden">
+              <div className="h-full rounded-full transition-all duration-200"
+                style={{ width: `${Math.min((deckTotal / DECK_MAX) * 100, 100)}%`, background: deckTotal >= DECK_MAX ? "#ef4444" : "#f59e0b" }} />
+            </div>
+            {deck.length > 0 && (
+              <button onClick={() => setDeck([])} className="shrink-0 text-[10px] text-neutral-600 hover:text-rose-400 transition">Clear</button>
+            )}
+          </div>
+
+          {/* deck list */}
+          <div className="flex-grow overflow-y-auto p-2">
+            {grouped.length === 0 ? (
+              <p className="text-neutral-600 text-xs text-center py-8">Click + on any card to add it.</p>
+            ) : grouped.map(g => (
+              <div key={g.type} className="mb-3">
+                <div className="flex items-center gap-1.5 px-1 mb-1">
+                  <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: TYPE_COLORS[g.type] }} />
+                  <span className="text-[10px] uppercase tracking-wide font-bold" style={{ color: TYPE_COLORS[g.type] }}>{TYPE_PLURAL[g.type]}</span>
+                  <span className="text-[10px] text-neutral-600">({g.entries.reduce((s, e) => s + e.count, 0)})</span>
+                </div>
+                {g.entries.map(({ card, count }) => (
+                  <div key={card.id} className="flex items-center gap-1.5 py-0.5 px-1 rounded hover:bg-neutral-800/60 group">
+                    <span className="shrink-0 text-[11px] font-bold text-neutral-500 w-5 text-right">×{count}</span>
+                    <span className="flex-grow text-xs text-neutral-200 truncate">{card.name}</span>
+                    <button onClick={() => addCard(card)} disabled={deckTotal >= DECK_MAX}
+                      className={"shrink-0 opacity-0 group-hover:opacity-100 w-5 h-5 text-xs rounded flex items-center justify-center font-bold transition " + (deckTotal < DECK_MAX ? "text-emerald-400 hover:bg-emerald-900/30" : "text-neutral-700 cursor-not-allowed")}>+</button>
+                    <button onClick={() => removeCard(card.id)}
+                      className="shrink-0 opacity-0 group-hover:opacity-100 w-5 h-5 text-xs rounded flex items-center justify-center font-bold text-rose-500 hover:bg-rose-900/30 transition">−</button>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+
+          {/* pie chart */}
+          {pieSlices.length > 0 && (
+            <div className="border-t border-neutral-800 p-3 shrink-0">
+              <p className="text-[9px] uppercase tracking-widest text-neutral-500 mb-2 font-bold">Deck Composition</p>
+              <div className="flex items-center gap-3">
+                <div className="shrink-0">
+                  <PieChart slices={pieSlices} sz={100} />
+                </div>
+                <div className="space-y-1 min-w-0">
+                  {pieSlices.map(s => (
+                    <div key={s.label} className="flex items-center gap-1.5 text-[10px]">
+                      <span className="w-2 h-2 rounded-sm shrink-0" style={{ background: s.color }} />
+                      <span className="text-neutral-400 truncate">{s.label}</span>
+                      <span className="text-neutral-600 ml-auto shrink-0 pl-2">{s.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* export */}
+          <div className="p-3 border-t border-neutral-800 shrink-0">
+            <button onClick={() => setExportOpen(true)}
+              className="w-full rounded-lg bg-amber-600 hover:bg-amber-500 text-black text-sm font-semibold py-2 transition">
+              Export Deck List
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* export modal */}
+      {exportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={() => setExportOpen(false)}>
+          <div className="w-full max-w-md rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-neutral-800" style={{ background: "rgba(139,92,246,0.1)" }}>
+              <h2 className="text-lg font-semibold text-amber-200">Deck List</h2>
+              <div className="flex items-center gap-2">
+                <button onClick={() => navigator.clipboard?.writeText(exportText())}
+                  className="text-xs text-neutral-400 hover:text-white border border-neutral-700 hover:border-neutral-500 rounded px-2 py-1 transition">
+                  Copy
+                </button>
+                <button onClick={() => setExportOpen(false)} className="text-neutral-400 hover:text-white text-xl leading-none ml-1">✕</button>
+              </div>
+            </div>
+            <pre className="p-5 text-sm text-neutral-200 whitespace-pre-wrap overflow-y-auto"
+              style={{ maxHeight: "60vh", fontFamily: "ui-monospace, 'Cascadia Code', monospace" }}>
+              {exportText()}
+            </pre>
+          </div>
         </div>
       )}
     </>
@@ -1142,7 +1408,11 @@ export default function Page() {
           )}
         </div>
 
-        <p className="text-[10px] uppercase tracking-wide text-neutral-600 mt-1 mb-1">Card types</p>
+        <button onClick={() => switchView("Deckbuilder")} className={"rounded-md px-3 py-2 text-sm text-left transition font-semibold " + (view === "Deckbuilder" ? "bg-violet-800/40 text-amber-200 border border-violet-600/50" : "hover:bg-neutral-800 text-neutral-300")}>
+          Deckbuilder
+        </button>
+
+        <p className="text-[10px] uppercase tracking-wide text-neutral-600 mt-2 mb-1">Card types</p>
         {CARD_TYPES.map((t) => (
           <button key={t} onClick={() => switchView(t)} className={"flex items-center justify-between rounded-md px-3 py-2 text-sm text-left transition " + (view === t ? "bg-violet-800/40 text-amber-200 border border-violet-600/50" : "hover:bg-neutral-800 text-neutral-300")}>
             <span>{t}</span><span className="text-[11px] text-neutral-500">{counts[t]}</span>
@@ -1252,6 +1522,8 @@ export default function Page() {
               </>
             )}
           </>
+        ) : view === "Deckbuilder" ? (
+          <DeckbuilderView cards={cards} />
         ) : view === "Keywords" ? (
           <KeywordsView keywords={keywords} canEdit={authed} onSet={setKeywordsRemote} />
         ) : view === "Lore" ? (
