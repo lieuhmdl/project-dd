@@ -783,7 +783,8 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
     const existing = deck.find(d => d.card.id === card.id);
     return !existing || existing.count < cardLimit(card);
   };
-  const isLegal = deckTotal <= DECK_MAX && deck.every(d => d.count <= cardLimit(d.card));
+  const DECK_MIN = 30;
+  const isLegal = deckTotal >= DECK_MIN && deckTotal <= DECK_MAX && deck.every(d => d.count <= cardLimit(d.card));
 
   const browseable = cards.filter(c => {
     if (!BROWSE_TYPES.includes(c.type)) return false;
@@ -870,7 +871,7 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
       const y = rect.top - 20;
       setPreviewCard(card);
       setPreviewPos({ x, y });
-    }, 2000);
+    }, 1000);
   };
   const endPreview = () => { clearTimeout(hoverTimer.current); setPreviewCard(null); };
 
