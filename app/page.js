@@ -750,8 +750,12 @@ function PieChart({ slices, sz = 210 }) {
 
 // ---- deckbuilder view -------------------------------------------------------
 function DeckbuilderView({ cards }) {
+  // step: "landing" | "companion" | "building"
+  const [step, setStep] = useState("landing");
   const [companion, setCompanion] = useState(null);
   const [deck, setDeck] = useState([]);
+  const [deckName, setDeckName] = useState("");
+  const [deckDesc, setDeckDesc] = useState("");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
   const [exportOpen, setExportOpen] = useState(false);
@@ -761,9 +765,22 @@ function DeckbuilderView({ cards }) {
   const DECK_ORDER  = ["Unit", "Ancient Relic", "Event", "Artifact"];
   const TYPE_COLORS = { "Unit": "#8b5cf6", "Ancient Relic": "#f59e0b", "Event": "#10b981", "Artifact": "#3b82f6" };
   const TYPE_PLURAL = { "Unit": "Units", "Ancient Relic": "Ancient Relics", "Event": "Events", "Artifact": "Artifacts" };
+  // Ancient Legends and Ancient Relics are both valid companions
+  const COMPANION_TYPES = ["Ancient Legend", "Ancient Relic"];
 
-  const legends  = cards.filter(c => c.type === "Ancient Legend");
-  const deckTotal = deck.reduce((s, d) => s + d.count, 0);
+  const companions = cards.filter(c => COMPANION_TYPES.includes(c.type));
+  const deckTotal  = deck.reduce((s, d) => s + d.count, 0);
+
+  // Per-card copy limit: max 2 Units, max 3 of everything else
+  const cardLimit = (card) => card.type === "Unit" ? 2 : 3;
+
+  const canAddCard = (card) => {
+    if (deckTotal >= DECK_MAX) return false;
+    const existing = deck.find(d => d.card.id === card.id);
+    return !existing || existing.count < cardLimit(card);
+  };
+
+  const isLegal = deckTotal <= DECK_MAX && deck.every(d => d.count <= cardLimit(d.card));
 
   const browseable = cards.filter(c => {
     if (!BROWSE_TYPES.includes(c.type)) return false;
@@ -776,7 +793,7 @@ function DeckbuilderView({ cards }) {
   });
 
   const addCard = (card) => {
-    if (deckTotal >= DECK_MAX) return;
+    if (!canAddCard(card)) return;
     setDeck(prev => {
       const i = prev.findIndex(d => d.card.id === card.id);
       if (i >= 0) return prev.map((d, j) => j === i ? { ...d, count: d.count + 1 } : d);
@@ -793,6 +810,8 @@ function DeckbuilderView({ cards }) {
     });
   };
 
+  const resetDeck = () => { setCompanion(null); setDeck([]); setDeckName(""); setDeckDesc(""); setStep("landing"); };
+
   const grouped = DECK_ORDER.map(type => ({
     type,
     entries: deck.filter(d => d.card.type === type).sort((a, b) => a.card.name.localeCompare(b.card.name)),
@@ -804,7 +823,11 @@ function DeckbuilderView({ cards }) {
   }).filter(Boolean);
 
   const exportText = () => {
-    const lines = ["Companion:", companion ? (companion.name || "(unnamed)") : "(none selected)", ""];
+    const lines = [];
+    if (deckName) { lines.push(`Deck: ${deckName}`); }
+    if (deckDesc) { lines.push(`Description: ${deckDesc}`); }
+    if (deckName || deckDesc) lines.push("");
+    lines.push("Companion:", companion ? (companion.name || "(unnamed)") : "(none selected)", "");
     DECK_ORDER.forEach(type => {
       const entries = deck.filter(d => d.card.type === type);
       if (!entries.length) return;
@@ -815,21 +838,54 @@ function DeckbuilderView({ cards }) {
     return lines.join("\n").trimEnd();
   };
 
-  // ---- companion picker ----
-  if (!companion) {
+  // ---- step: landing --------------------------------------------------------
+  if (step === "landing") {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+        <h2 className="text-2xl font-bold text-amber-200 mb-2">Deckbuilder</h2>
+        <p className="text-sm text-neutral-400 mb-8 max-w-sm">Build, name, and export your deck. Start by giving it a name, then choose your Companion.</p>
+        <div className="w-full max-w-sm space-y-3 mb-6 text-left">
+          <div>
+            <Label>Deck Name</Label>
+            <input className={inputCls} value={deckName} onChange={e => setDeckName(e.target.value)} placeholder="My Paladin Deck" />
+          </div>
+          <div>
+            <Label>Description (optional)</Label>
+            <textarea className={inputCls} rows={2} value={deckDesc} onChange={e => setDeckDesc(e.target.value)} placeholder="A brief description of your strategy…" />
+          </div>
+        </div>
+        <button
+          onClick={() => setStep("companion")}
+          className="rounded-xl bg-amber-600 hover:bg-amber-500 text-black font-bold px-8 py-3 text-base transition shadow-lg">
+          Choose Companion →
+        </button>
+        {!deckName && <p className="text-[11px] text-neutral-600 mt-3">You can skip the name and fill it in later.</p>}
+      </div>
+    );
+  }
+
+  // ---- step: companion picker -----------------------------------------------
+  if (step === "companion") {
     return (
       <div>
-        <h2 className="text-xl font-semibold text-amber-200 mb-1">Deckbuilder</h2>
-        <p className="text-sm text-neutral-400 mb-6">Start by choosing your Companion — they define your deck's identity.</p>
-        {legends.length === 0 ? (
+        <div className="flex items-center gap-3 mb-5">
+          <button onClick={() => setStep("landing")} className="text-sm text-neutral-500 hover:text-amber-300 transition">← Back</button>
+          <div>
+            <h2 className="text-xl font-semibold text-amber-200">{deckName || "New Deck"}</h2>
+            <p className="text-sm text-neutral-400">Choose your Companion — an Ancient Legend or Ancient Relic that anchors the deck.</p>
+          </div>
+        </div>
+        {companions.length === 0 ? (
           <div className="border border-dashed border-neutral-800 rounded-xl p-16 text-center text-neutral-500">
-            No Ancient Legend cards yet. Add some in the card database first.
+            No Ancient Legend or Ancient Relic cards yet. Add some in the card database first.
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-w-3xl">
-            {legends.map(c => (
-              <button key={c.id} onClick={() => setCompanion(c)}
+            {companions.map(c => (
+              <button key={c.id} onClick={() => { setCompanion(c); setStep("building"); }}
                 className="rounded-xl border border-neutral-700 bg-neutral-900 hover:border-amber-500 hover:bg-neutral-800 p-4 text-left transition group">
+                <span className="inline-block text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded mb-1.5"
+                  style={{ background: c.type === "Ancient Legend" ? "#8b5cf622" : "#f59e0b22", color: c.type === "Ancient Legend" ? "#a78bfa" : "#f59e0b" }}>{c.type}</span>
                 <div className="font-semibold text-amber-200 text-sm truncate group-hover:text-amber-100">{c.name || "(unnamed)"}</div>
                 <div className="text-xs text-neutral-400 mt-0.5">{[c.race, c.klass].filter(Boolean).join(" ")}{c.rarity ? ` · ${c.rarity}` : ""}</div>
                 {c.tribes?.length ? <div className="text-xs text-violet-400 mt-1">{c.tribes.join(", ")}</div> : null}
@@ -842,7 +898,7 @@ function DeckbuilderView({ cards }) {
     );
   }
 
-  // ---- main two-panel layout ----
+  // ---- step: building (two-panel layout) ------------------------------------
   return (
     <>
       <div className="flex -m-6 overflow-hidden" style={{ height: "100vh" }}>
@@ -875,7 +931,9 @@ function DeckbuilderView({ cards }) {
               <div className="divide-y divide-neutral-800/50">
                 {browseable.map(c => {
                   const inDeck = deck.find(d => d.card.id === c.id);
-                  const canAdd = deckTotal < DECK_MAX;
+                  const limit  = cardLimit(c);
+                  const canAdd = canAddCard(c);
+                  const atLimit = inDeck && inDeck.count >= limit;
                   return (
                     <div key={c.id} className="flex items-center gap-2 px-3 py-2.5 hover:bg-neutral-800/40 transition group">
                       <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
@@ -886,9 +944,9 @@ function DeckbuilderView({ cards }) {
                       )}
                       <span className="shrink-0 text-[11px] text-amber-600/80">P{c.provisions || 0} M{c.mana || 0}</span>
                       {inDeck
-                        ? <span className="shrink-0 text-xs text-violet-300 font-bold w-6 text-center">×{inDeck.count}</span>
-                        : <span className="w-6 shrink-0" />}
-                      <button onClick={() => addCard(c)} disabled={!canAdd} title="Add to deck"
+                        ? <span className={"shrink-0 text-xs font-bold w-8 text-center " + (atLimit ? "text-rose-400" : "text-violet-300")}>×{inDeck.count}/{limit}</span>
+                        : <span className="w-8 shrink-0 text-[10px] text-neutral-700 text-center">/{limit}</span>}
+                      <button onClick={() => addCard(c)} disabled={!canAdd} title={atLimit ? `Max ${limit} copies` : "Add to deck"}
                         className={"shrink-0 w-7 h-7 rounded-md flex items-center justify-center text-base font-bold transition " + (canAdd ? "text-emerald-400 hover:bg-emerald-900/30 hover:text-emerald-300" : "text-neutral-700 cursor-not-allowed")}>+</button>
                       {inDeck && (
                         <button onClick={() => removeCard(c.id)} title="Remove one"
@@ -905,22 +963,29 @@ function DeckbuilderView({ cards }) {
         {/* RIGHT: deck panel */}
         <div className="w-72 shrink-0 flex flex-col bg-neutral-900 overflow-hidden">
 
-          {/* companion header */}
+          {/* deck name + companion + back */}
           <div className="p-3 border-b border-neutral-800 shrink-0" style={{ background: "rgba(139,92,246,0.08)" }}>
-            <div className="flex items-center justify-between mb-0.5">
-              <span className="text-[9px] uppercase tracking-widest font-bold text-violet-400">Companion</span>
-              <button onClick={() => { setCompanion(null); setDeck([]); }}
-                className="text-[10px] text-neutral-500 hover:text-amber-300 transition">↩ Change</button>
+            <div className="flex items-center justify-between mb-2">
+              <input
+                className="bg-transparent text-amber-200 font-semibold text-sm placeholder-neutral-600 focus:outline-none focus:border-b focus:border-amber-500/40 w-full truncate"
+                value={deckName}
+                onChange={e => setDeckName(e.target.value)}
+                placeholder="Deck Name…"
+              />
+              <button onClick={resetDeck} className="shrink-0 text-[10px] text-neutral-500 hover:text-rose-400 transition ml-2">✕ New</button>
             </div>
-            <div className="font-semibold text-amber-200 text-sm leading-snug">{companion.name || "(unnamed)"}</div>
-            <div className="text-[11px] text-neutral-400 mt-0.5">
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] uppercase tracking-widest font-bold text-violet-400">Companion</span>
+              <button onClick={() => setStep("companion")} className="text-[10px] text-neutral-500 hover:text-amber-300 transition">↩ Change</button>
+            </div>
+            <div className="font-medium text-neutral-100 text-sm mt-0.5 truncate">{companion.name || "(unnamed)"}</div>
+            <div className="text-[11px] text-neutral-400">
               {[companion.race, companion.klass].filter(Boolean).join(" ")}{companion.rarity ? ` · ${companion.rarity}` : ""}
             </div>
             {companion.tribes?.length ? <div className="text-[10px] text-violet-400 mt-0.5">{companion.tribes.join(", ")}</div> : null}
-            {companion.passive ? <p className="text-[10px] text-neutral-500 mt-1 line-clamp-2">{companion.passive}</p> : null}
           </div>
 
-          {/* card count + progress */}
+          {/* card count + legality */}
           <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-800 shrink-0">
             <span className="text-sm font-semibold text-neutral-200">{deckTotal}</span>
             <span className="text-sm text-neutral-500">/ {DECK_MAX}</span>
@@ -928,9 +993,9 @@ function DeckbuilderView({ cards }) {
               <div className="h-full rounded-full transition-all duration-200"
                 style={{ width: `${Math.min((deckTotal / DECK_MAX) * 100, 100)}%`, background: deckTotal >= DECK_MAX ? "#ef4444" : "#f59e0b" }} />
             </div>
-            {deck.length > 0 && (
-              <button onClick={() => setDeck([])} className="shrink-0 text-[10px] text-neutral-600 hover:text-rose-400 transition">Clear</button>
-            )}
+            <span className={"shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded " + (isLegal ? "bg-emerald-900/40 text-emerald-400" : "bg-rose-900/40 text-rose-400")}>
+              {isLegal ? "Legal" : "Illegal"}
+            </span>
           </div>
 
           {/* deck list */}
@@ -944,16 +1009,21 @@ function DeckbuilderView({ cards }) {
                   <span className="text-[10px] uppercase tracking-wide font-bold" style={{ color: TYPE_COLORS[g.type] }}>{TYPE_PLURAL[g.type]}</span>
                   <span className="text-[10px] text-neutral-600">({g.entries.reduce((s, e) => s + e.count, 0)})</span>
                 </div>
-                {g.entries.map(({ card, count }) => (
-                  <div key={card.id} className="flex items-center gap-1.5 py-0.5 px-1 rounded hover:bg-neutral-800/60 group">
-                    <span className="shrink-0 text-[11px] font-bold text-neutral-500 w-5 text-right">×{count}</span>
-                    <span className="flex-grow text-xs text-neutral-200 truncate">{card.name}</span>
-                    <button onClick={() => addCard(card)} disabled={deckTotal >= DECK_MAX}
-                      className={"shrink-0 opacity-0 group-hover:opacity-100 w-5 h-5 text-xs rounded flex items-center justify-center font-bold transition " + (deckTotal < DECK_MAX ? "text-emerald-400 hover:bg-emerald-900/30" : "text-neutral-700 cursor-not-allowed")}>+</button>
-                    <button onClick={() => removeCard(card.id)}
-                      className="shrink-0 opacity-0 group-hover:opacity-100 w-5 h-5 text-xs rounded flex items-center justify-center font-bold text-rose-500 hover:bg-rose-900/30 transition">−</button>
-                  </div>
-                ))}
+                {g.entries.map(({ card, count }) => {
+                  const limit = cardLimit(card);
+                  const over  = count > limit;
+                  return (
+                    <div key={card.id} className="flex items-center gap-1.5 py-0.5 px-1 rounded hover:bg-neutral-800/60 group">
+                      <span className={"shrink-0 text-[11px] font-bold w-5 text-right " + (over ? "text-rose-400" : "text-neutral-500")}>×{count}</span>
+                      <span className={"flex-grow text-xs truncate " + (over ? "text-rose-300" : "text-neutral-200")}>{card.name}</span>
+                      {over && <span className="shrink-0 text-[9px] text-rose-500">over limit</span>}
+                      <button onClick={() => addCard(card)} disabled={!canAddCard(card)}
+                        className={"shrink-0 opacity-0 group-hover:opacity-100 w-5 h-5 text-xs rounded flex items-center justify-center font-bold transition " + (canAddCard(card) ? "text-emerald-400 hover:bg-emerald-900/30" : "text-neutral-700 cursor-not-allowed")}>+</button>
+                      <button onClick={() => removeCard(card.id)}
+                        className="shrink-0 opacity-0 group-hover:opacity-100 w-5 h-5 text-xs rounded flex items-center justify-center font-bold text-rose-500 hover:bg-rose-900/30 transition">−</button>
+                    </div>
+                  );
+                })}
               </div>
             ))}
           </div>
@@ -994,7 +1064,7 @@ function DeckbuilderView({ cards }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={() => setExportOpen(false)}>
           <div className="w-full max-w-md rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-5 py-3 border-b border-neutral-800" style={{ background: "rgba(139,92,246,0.1)" }}>
-              <h2 className="text-lg font-semibold text-amber-200">Deck List</h2>
+              <h2 className="text-lg font-semibold text-amber-200">{deckName || "Deck List"}</h2>
               <div className="flex items-center gap-2">
                 <button onClick={() => navigator.clipboard?.writeText(exportText())}
                   className="text-xs text-neutral-400 hover:text-white border border-neutral-700 hover:border-neutral-500 rounded px-2 py-1 transition">
