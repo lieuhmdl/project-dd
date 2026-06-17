@@ -766,9 +766,10 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
   const [previewCard, setPreviewCard] = useState(null);
   const [previewPos, setPreviewPos] = useState({ x: 0, y: 0 });
   const hoverTimer = useRef(null);
+  const mousePos = useRef({ x: 0, y: 0 });
 
   const DECK_MAX = 40;
-  const BROWSE_TYPES = ["Unit", "Ancient Relic", "Event", "Artifact"];
+  const BROWSE_TYPES = ["Unit", "Event", "Artifact"];
   const DECK_ORDER  = ["Unit", "Ancient Relic", "Event", "Artifact"];
   const TYPE_COLORS = { "Unit": "#8b5cf6", "Ancient Relic": "#f59e0b", "Event": "#10b981", "Artifact": "#3b82f6" };
   const TYPE_PLURAL = { "Unit": "Units", "Ancient Relic": "Ancient Relics", "Event": "Events", "Artifact": "Artifacts" };
@@ -863,14 +864,13 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
   };
 
   // card hover preview helpers
+  const trackMouse = (e) => { mousePos.current = { x: e.clientX, y: e.clientY }; };
   const startPreview = (e, card) => {
     clearTimeout(hoverTimer.current);
-    const rect = e.currentTarget.getBoundingClientRect();
+    mousePos.current = { x: e.clientX, y: e.clientY };
     hoverTimer.current = setTimeout(() => {
-      const x = rect.right + 12;
-      const y = rect.top - 20;
       setPreviewCard(card);
-      setPreviewPos({ x, y });
+      setPreviewPos({ x: mousePos.current.x, y: mousePos.current.y });
     }, 1000);
   };
   const endPreview = () => { clearTimeout(hoverTimer.current); setPreviewCard(null); };
@@ -999,9 +999,11 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
                   const atLimit = inDeck && inDeck.count >= limit;
                   return (
                     <div key={c.id}
-                      className="flex items-center gap-2 px-3 py-2.5 hover:bg-neutral-800/40 transition group"
+                      className="flex items-center gap-2 px-3 py-2.5 hover:bg-neutral-800/40 transition group cursor-pointer"
                       onMouseEnter={e => startPreview(e, c)}
-                      onMouseLeave={endPreview}>
+                      onMouseMove={trackMouse}
+                      onMouseLeave={endPreview}
+                      onDoubleClick={() => addCard(c)}>
                       <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
                         style={{ background: TYPE_COLORS[c.type] + "22", color: TYPE_COLORS[c.type] }}>{c.type}</span>
                       <span className="flex-grow text-sm text-neutral-100 font-medium truncate">{c.name || "(unnamed)"}</span>
@@ -1140,8 +1142,8 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
       {previewCard && (
         <div className="fixed z-[100] pointer-events-none drop-shadow-2xl"
           style={{
-            left: Math.min(previewPos.x, (typeof window !== "undefined" ? window.innerWidth : 1200) - 290),
-            top:  Math.max(8, Math.min(previewPos.y, (typeof window !== "undefined" ? window.innerHeight : 800) - 430)),
+            left: Math.max(8, Math.min(previewPos.x + 16, (typeof window !== "undefined" ? window.innerWidth : 1200) - 285)),
+            top:  Math.max(8, Math.min(previewPos.y - 120, (typeof window !== "undefined" ? window.innerHeight : 800) - 440)),
           }}>
           <CardTile card={previewCard} canEdit={false} />
         </div>
@@ -1734,7 +1736,7 @@ export default function Page() {
           </div>
         </div>
       )}
-      {((!presence.michael || Date.now() - presence.michael >= 90000) || (presence.hunter && Date.now() - presence.hunter < 90000)) && (
+      {view !== "Deckbuilder" && ((!presence.michael || Date.now() - presence.michael >= 90000) || (presence.hunter && Date.now() - presence.hunter < 90000)) && (
         <div className="fixed bottom-4 right-4 z-40 pointer-events-none select-none flex items-center gap-3" style={{ fontFamily: "Impact, Haettenschweiler, 'Arial Narrow Bold', sans-serif", fontSize: "1.1rem", letterSpacing: "0.05em" }}>
           {(!presence.michael || Date.now() - presence.michael >= 90000) && (
             <span style={{ color: "#f97316", textShadow: "0 0 12px #ea580c88" }}>MICHAEL IS OFFLINE</span>
