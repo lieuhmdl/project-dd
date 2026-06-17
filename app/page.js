@@ -749,37 +749,40 @@ function PieChart({ slices, sz = 210 }) {
 }
 
 // ---- deckbuilder view -------------------------------------------------------
-function DeckbuilderView({ cards }) {
-  // step: "landing" | "companion" | "building"
-  const [step, setStep] = useState("landing");
+function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, onDeleteDeck }) {
+  // step: "database" | "companion" | "building"
+  const [step, setStep] = useState("database");
   const [companion, setCompanion] = useState(null);
   const [deck, setDeck] = useState([]);
+  const [deckId, setDeckId] = useState(null);
   const [deckName, setDeckName] = useState("");
   const [deckDesc, setDeckDesc] = useState("");
+  const [deckAuthor, setDeckAuthor] = useState("");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
   const [exportOpen, setExportOpen] = useState(false);
+  const [deckSaving, setDeckSaving] = useState(false);
+  const [deckStatus, setDeckStatus] = useState("");
+  const [previewCard, setPreviewCard] = useState(null);
+  const [previewPos, setPreviewPos] = useState({ x: 0, y: 0 });
+  const hoverTimer = useRef(null);
 
   const DECK_MAX = 40;
   const BROWSE_TYPES = ["Unit", "Ancient Relic", "Event", "Artifact"];
   const DECK_ORDER  = ["Unit", "Ancient Relic", "Event", "Artifact"];
   const TYPE_COLORS = { "Unit": "#8b5cf6", "Ancient Relic": "#f59e0b", "Event": "#10b981", "Artifact": "#3b82f6" };
   const TYPE_PLURAL = { "Unit": "Units", "Ancient Relic": "Ancient Relics", "Event": "Events", "Artifact": "Artifacts" };
-  // Ancient Legends and Ancient Relics are both valid companions
   const COMPANION_TYPES = ["Ancient Legend", "Ancient Relic"];
 
   const companions = cards.filter(c => COMPANION_TYPES.includes(c.type));
   const deckTotal  = deck.reduce((s, d) => s + d.count, 0);
 
-  // Per-card copy limit: max 2 Units, max 3 of everything else
-  const cardLimit = (card) => card.type === "Unit" ? 2 : 3;
-
+  const cardLimit  = (card) => card.type === "Unit" ? 2 : 3;
   const canAddCard = (card) => {
     if (deckTotal >= DECK_MAX) return false;
     const existing = deck.find(d => d.card.id === card.id);
     return !existing || existing.count < cardLimit(card);
   };
-
   const isLegal = deckTotal <= DECK_MAX && deck.every(d => d.count <= cardLimit(d.card));
 
   const browseable = cards.filter(c => {
@@ -810,7 +813,26 @@ function DeckbuilderView({ cards }) {
     });
   };
 
-  const resetDeck = () => { setCompanion(null); setDeck([]); setDeckName(""); setDeckDesc(""); setStep("landing"); };
+  const startNewDeck = () => {
+    setDeckId(null); setDeckName(""); setDeckDesc(""); setDeckAuthor(username || "");
+    setCompanion(null); setDeck([]); setDeckStatus(""); setStep("companion");
+  };
+
+  const openDeck = (d) => {
+    setDeckId(d.id); setDeckName(d.name || ""); setDeckDesc(d.description || "");
+    setDeckAuthor(d.author || ""); setCompanion(d.companion || null); setDeck(d.cards || []);
+    setDeckStatus(""); setStep("building");
+  };
+
+  const backToDatabase = () => { setPreviewCard(null); clearTimeout(hoverTimer.current); setStep("database"); };
+
+  const saveDeck = async () => {
+    setDeckSaving(true);
+    const id = deckId || uid();
+    const result = await onSaveDeck({ id, name: deckName, description: deckDesc, author: deckAuthor, companion, cards: deck });
+    if (result?.ok) { setDeckId(id); setDeckStatus("Saved!"); setTimeout(() => setDeckStatus(""), 2000); }
+    setDeckSaving(false);
+  };
 
   const grouped = DECK_ORDER.map(type => ({
     type,
@@ -824,9 +846,10 @@ function DeckbuilderView({ cards }) {
 
   const exportText = () => {
     const lines = [];
-    if (deckName) { lines.push(`Deck: ${deckName}`); }
-    if (deckDesc) { lines.push(`Description: ${deckDesc}`); }
-    if (deckName || deckDesc) lines.push("");
+    if (deckName)   lines.push(`Deck: ${deckName}`);
+    if (deckAuthor) lines.push(`By: ${deckAuthor}`);
+    if (deckDesc)   lines.push(`Description: ${deckDesc}`);
+    if (deckName || deckAuthor || deckDesc) lines.push("");
     lines.push("Companion:", companion ? (companion.name || "(unnamed)") : "(none selected)", "");
     DECK_ORDER.forEach(type => {
       const entries = deck.filter(d => d.card.type === type);
@@ -838,28 +861,66 @@ function DeckbuilderView({ cards }) {
     return lines.join("\n").trimEnd();
   };
 
-  // ---- step: landing --------------------------------------------------------
-  if (step === "landing") {
+  // card hover preview helpers
+  const startPreview = (e, card) => {
+    clearTimeout(hoverTimer.current);
+    const rect = e.currentTarget.getBoundingClientRect();
+    hoverTimer.current = setTimeout(() => {
+      const x = rect.right + 12;
+      const y = rect.top - 20;
+      setPreviewCard(card);
+      setPreviewPos({ x, y });
+    }, 2000);
+  };
+  const endPreview = () => { clearTimeout(hoverTimer.current); setPreviewCard(null); };
+
+  // ---- step: database -------------------------------------------------------
+  if (step === "database") {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
-        <h2 className="text-2xl font-bold text-amber-200 mb-2">Deckbuilder</h2>
-        <p className="text-sm text-neutral-400 mb-8 max-w-sm">Build, name, and export your deck. Start by giving it a name, then choose your Companion.</p>
-        <div className="w-full max-w-sm space-y-3 mb-6 text-left">
+      <div>
+        <div className="flex items-center justify-between mb-3">
           <div>
-            <Label>Deck Name</Label>
-            <input className={inputCls} value={deckName} onChange={e => setDeckName(e.target.value)} placeholder="My Paladin Deck" />
+            <h2 className="text-2xl font-bold text-neutral-100">Deckbuilder</h2>
+            <p className="text-sm text-neutral-500">{decks.length} deck{decks.length !== 1 ? "s" : ""} in the database</p>
           </div>
-          <div>
-            <Label>Description (optional)</Label>
-            <textarea className={inputCls} rows={2} value={deckDesc} onChange={e => setDeckDesc(e.target.value)} placeholder="A brief description of your strategy…" />
-          </div>
+          {authed && (
+            <button onClick={startNewDeck} className="rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-semibold px-4 py-2 text-sm shadow">
+              + Create New Deck
+            </button>
+          )}
         </div>
-        <button
-          onClick={() => setStep("companion")}
-          className="rounded-xl bg-amber-600 hover:bg-amber-500 text-black font-bold px-8 py-3 text-base transition shadow-lg">
-          Choose Companion →
-        </button>
-        {!deckName && <p className="text-[11px] text-neutral-600 mt-3">You can skip the name and fill it in later.</p>}
+        {decks.length === 0 ? (
+          <div className="border border-dashed border-neutral-800 rounded-xl p-16 text-center text-neutral-500">
+            No decks yet.{authed ? " Click \"+ Create New Deck\" to get started." : " Sign in to create a deck."}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {[...decks].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).map(d => {
+              const total = (d.cards || []).reduce((s, e) => s + e.count, 0);
+              return (
+                <div key={d.id} onClick={() => openDeck(d)}
+                  className="rounded-xl border border-neutral-700 bg-neutral-900 hover:border-amber-500/60 hover:bg-neutral-800/60 p-4 cursor-pointer transition group relative">
+                  {authed && (
+                    <button onClick={ev => { ev.stopPropagation(); onDeleteDeck(d.id); }}
+                      className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-[11px] bg-rose-700 hover:bg-rose-600 text-white rounded px-1.5 py-0.5 transition">✕</button>
+                  )}
+                  <div className="font-semibold text-amber-200 text-base truncate pr-6">{d.name || "(untitled)"}</div>
+                  {d.author && <div className="text-[11px] text-neutral-500 mt-0.5">by {d.author}</div>}
+                  <div className="text-xs text-neutral-400 mt-1.5">
+                    Companion: <span className="text-neutral-200">{d.companion?.name || "(none)"}</span>
+                  </div>
+                  {d.description && <p className="text-[11px] text-neutral-500 mt-1 line-clamp-2">{d.description}</p>}
+                  <div className="flex items-center gap-2 mt-2">
+                    <div className="flex-grow h-1 rounded-full bg-neutral-800 overflow-hidden">
+                      <div className="h-full rounded-full bg-amber-600/60" style={{ width: `${Math.min((total / 40) * 100, 100)}%` }} />
+                    </div>
+                    <span className="text-[10px] text-neutral-500 shrink-0">{total} / 40 cards</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
   }
@@ -869,7 +930,7 @@ function DeckbuilderView({ cards }) {
     return (
       <div>
         <div className="flex items-center gap-3 mb-5">
-          <button onClick={() => setStep("landing")} className="text-sm text-neutral-500 hover:text-amber-300 transition">← Back</button>
+          <button onClick={() => setStep("database")} className="text-sm text-neutral-500 hover:text-amber-300 transition">← Back</button>
           <div>
             <h2 className="text-xl font-semibold text-amber-200">{deckName || "New Deck"}</h2>
             <p className="text-sm text-neutral-400">Choose your Companion — an Ancient Legend or Ancient Relic that anchors the deck.</p>
@@ -907,13 +968,14 @@ function DeckbuilderView({ cards }) {
         <div className="flex flex-col flex-grow border-r border-neutral-800 overflow-hidden">
           {/* filter bar */}
           <div className="flex gap-2 items-center p-3 border-b border-neutral-800 bg-neutral-950/60 shrink-0">
+            <button onClick={backToDatabase} className="shrink-0 text-xs text-neutral-500 hover:text-amber-300 transition pr-1">← Decks</button>
             <input
               className={inputCls + " flex-grow text-sm"}
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Search by name, race, class, keyword…"
             />
-            <select className={inputCls + " w-40 text-sm shrink-0"} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+            <select className={inputCls + " w-36 text-sm shrink-0"} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
               <option value="All">All Types</option>
               {BROWSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
@@ -930,12 +992,15 @@ function DeckbuilderView({ cards }) {
             ) : (
               <div className="divide-y divide-neutral-800/50">
                 {browseable.map(c => {
-                  const inDeck = deck.find(d => d.card.id === c.id);
-                  const limit  = cardLimit(c);
-                  const canAdd = canAddCard(c);
+                  const inDeck  = deck.find(d => d.card.id === c.id);
+                  const limit   = cardLimit(c);
+                  const canAdd  = canAddCard(c);
                   const atLimit = inDeck && inDeck.count >= limit;
                   return (
-                    <div key={c.id} className="flex items-center gap-2 px-3 py-2.5 hover:bg-neutral-800/40 transition group">
+                    <div key={c.id}
+                      className="flex items-center gap-2 px-3 py-2.5 hover:bg-neutral-800/40 transition group"
+                      onMouseEnter={e => startPreview(e, c)}
+                      onMouseLeave={endPreview}>
                       <span className="shrink-0 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded"
                         style={{ background: TYPE_COLORS[c.type] + "22", color: TYPE_COLORS[c.type] }}>{c.type}</span>
                       <span className="flex-grow text-sm text-neutral-100 font-medium truncate">{c.name || "(unnamed)"}</span>
@@ -963,17 +1028,22 @@ function DeckbuilderView({ cards }) {
         {/* RIGHT: deck panel */}
         <div className="w-72 shrink-0 flex flex-col bg-neutral-900 overflow-hidden">
 
-          {/* deck name + companion + back */}
+          {/* deck name + author + companion */}
           <div className="p-3 border-b border-neutral-800 shrink-0" style={{ background: "rgba(139,92,246,0.08)" }}>
-            <div className="flex items-center justify-between mb-2">
-              <input
-                className="bg-transparent text-amber-200 font-semibold text-sm placeholder-neutral-600 focus:outline-none focus:border-b focus:border-amber-500/40 w-full truncate"
-                value={deckName}
-                onChange={e => setDeckName(e.target.value)}
-                placeholder="Deck Name…"
-              />
-              <button onClick={resetDeck} className="shrink-0 text-[10px] text-neutral-500 hover:text-rose-400 transition ml-2">✕ New</button>
-            </div>
+            <input
+              className="bg-transparent text-amber-200 font-semibold text-sm placeholder-neutral-600 focus:outline-none w-full truncate mb-1"
+              value={deckName}
+              onChange={e => setDeckName(e.target.value)}
+              placeholder="Deck Name…"
+            />
+            {users.length > 0 ? (
+              <select className={inputCls + " text-xs py-0.5 mb-2"} value={deckAuthor} onChange={e => setDeckAuthor(e.target.value)}>
+                <option value="">Author…</option>
+                {users.map(u => <option key={u} value={u}>{u}</option>)}
+              </select>
+            ) : (
+              <input className={inputCls + " text-xs py-0.5 mb-2"} value={deckAuthor} onChange={e => setDeckAuthor(e.target.value)} placeholder="Author…" />
+            )}
             <div className="flex items-center justify-between">
               <span className="text-[9px] uppercase tracking-widest font-bold text-violet-400">Companion</span>
               <button onClick={() => setStep("companion")} className="text-[10px] text-neutral-500 hover:text-amber-300 transition">↩ Change</button>
@@ -1049,8 +1119,14 @@ function DeckbuilderView({ cards }) {
             </div>
           )}
 
-          {/* export */}
-          <div className="p-3 border-t border-neutral-800 shrink-0">
+          {/* export + save */}
+          <div className="p-3 border-t border-neutral-800 shrink-0 space-y-2">
+            {authed && (
+              <button onClick={saveDeck} disabled={deckSaving}
+                className="w-full rounded-lg bg-violet-700 hover:bg-violet-600 disabled:opacity-50 text-white text-sm font-semibold py-2 transition flex items-center justify-center gap-2">
+                {deckSaving ? "Saving…" : deckStatus ? deckStatus : (deckId ? "Save Changes" : "Save Deck")}
+              </button>
+            )}
             <button onClick={() => setExportOpen(true)}
               className="w-full rounded-lg bg-amber-600 hover:bg-amber-500 text-black text-sm font-semibold py-2 transition">
               Export Deck List
@@ -1058,6 +1134,17 @@ function DeckbuilderView({ cards }) {
           </div>
         </div>
       </div>
+
+      {/* card hover preview */}
+      {previewCard && (
+        <div className="fixed z-[100] pointer-events-none drop-shadow-2xl"
+          style={{
+            left: Math.min(previewPos.x, (typeof window !== "undefined" ? window.innerWidth : 1200) - 290),
+            top:  Math.max(8, Math.min(previewPos.y, (typeof window !== "undefined" ? window.innerHeight : 800) - 430)),
+          }}>
+          <CardTile card={previewCard} canEdit={false} />
+        </div>
+      )}
 
       {/* export modal */}
       {exportOpen && (
@@ -1226,6 +1313,7 @@ export default function Page() {
   const [presence, setPresence] = useState({});
   const [cardOrder, setCardOrder] = useState({});
   const [changelog, setChangelog] = useState([]);
+  const [decks, setDecks] = useState([]);
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [view, setView] = useState("Unit");
@@ -1257,7 +1345,20 @@ export default function Page() {
       setPresence(d.presence || {});
       setCardOrder(d.cardOrder || {});
       setChangelog(d.changelog || []);
+      setDecks(d.decks || []);
     } catch (e) { /* offline; keep what we have */ }
+  };
+
+  const saveDeckRemote = async (deck) => {
+    const r = await fetch("/api/decks", { method: "POST", headers: writeHeaders(), body: JSON.stringify(deck) });
+    const d = await r.json();
+    if (d.ok) setDecks(prev => { const i = prev.findIndex(x => x.id === d.deck.id); return i >= 0 ? prev.map((x, j) => j === i ? d.deck : x) : [...prev, d.deck]; });
+    return d;
+  };
+
+  const deleteDeckRemote = async (id) => {
+    await fetch(`/api/decks?id=${id}`, { method: "DELETE", headers: writeHeaders() });
+    setDecks(prev => prev.filter(d => d.id !== id));
   };
 
   // initial load + restore sign-in
@@ -1593,7 +1694,7 @@ export default function Page() {
             )}
           </>
         ) : view === "Deckbuilder" ? (
-          <DeckbuilderView cards={cards} />
+          <DeckbuilderView cards={cards} decks={decks} authed={authed} username={username} users={users} onSaveDeck={saveDeckRemote} onDeleteDeck={deleteDeckRemote} />
         ) : view === "Keywords" ? (
           <KeywordsView keywords={keywords} canEdit={authed} onSet={setKeywordsRemote} />
         ) : view === "Lore" ? (
