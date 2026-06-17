@@ -774,7 +774,7 @@ function CostBarChart({ data, color, label }) {
 }
 
 // ---- deck view modal --------------------------------------------------------
-function DeckViewModal({ deck, authed, onSave, onEdit, onDelete, onClose }) {
+function DeckViewModal({ deck, authed, isOwner, onSave, onEdit, onDelete, onCopy, onClose }) {
   const [desc, setDesc] = useState(deck.description || "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -820,8 +820,9 @@ function DeckViewModal({ deck, authed, onSave, onEdit, onDelete, onClose }) {
             <p className="text-xs text-neutral-600 mt-0.5">{deckTotal} / 40 cards</p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0 ml-4">
-            {authed && <button onClick={() => { onClose(); onEdit(deck); }} className="text-xs border border-neutral-600 hover:border-amber-500 text-neutral-300 hover:text-amber-300 rounded px-2.5 py-1 transition">Edit</button>}
-            {authed && <button onClick={() => { onDelete(deck.id); onClose(); }} className="text-xs bg-rose-700/60 hover:bg-rose-700 text-white rounded px-2.5 py-1 transition">Delete</button>}
+            {isOwner && <button onClick={() => { onClose(); onEdit(deck); }} className="text-xs border border-neutral-600 hover:border-amber-500 text-neutral-300 hover:text-amber-300 rounded px-2.5 py-1 transition">Edit</button>}
+            {isOwner && <button onClick={() => { onDelete(deck.id); onClose(); }} className="text-xs bg-rose-700/60 hover:bg-rose-700 text-white rounded px-2.5 py-1 transition">Delete</button>}
+            {authed && !isOwner && <button onClick={() => { onClose(); onCopy(deck); }} className="text-xs bg-violet-700/60 hover:bg-violet-700 text-white rounded px-2.5 py-1 transition">Create a Copy</button>}
             <button onClick={onClose} className="text-neutral-400 hover:text-white text-xl leading-none ml-1">✕</button>
           </div>
         </div>
@@ -833,7 +834,7 @@ function DeckViewModal({ deck, authed, onSave, onEdit, onDelete, onClose }) {
             <div className="p-5 space-y-5">
               <div>
                 <label className="block text-[10px] uppercase tracking-wide text-neutral-500 mb-1.5 font-bold">Description / Strategy Guide</label>
-                {authed ? (
+                {isOwner ? (
                   <>
                     <textarea className={inputCls + " text-sm"} rows={4} value={desc} onChange={e => setDesc(e.target.value)} placeholder="Describe your strategy, win conditions, key combos…" />
                     {desc !== (deck.description || "") && (
@@ -966,6 +967,12 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
     setDeckStatus(""); setStep("building");
   };
 
+  const copyDeck = (d) => {
+    setDeckId(null); setDeckName(`${d.name || "Untitled"} (Copy)`); setDeckDesc(d.description || "");
+    setDeckAuthor(username || ""); setCompanion(d.companion || null); setDeck(d.cards || []);
+    setDeckStatus(""); setStep("building");
+  };
+
   const backToDatabase = () => { setPreviewCard(null); clearTimeout(hoverTimer.current); setStep("database"); };
 
   const saveDeck = async () => {
@@ -1053,17 +1060,22 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {filteredDecks.map(d => {
                 const total = (d.cards || []).reduce((s, e) => s + e.count, 0);
+                const isOwner = authed && (!d.author || d.author === username);
                 return (
                   <div key={d.id} onClick={() => setViewDeck(d)}
                     className="rounded-xl border border-neutral-700 bg-neutral-900 hover:border-amber-500/60 hover:bg-neutral-800/60 p-4 cursor-pointer transition group relative">
                     <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition">
-                      {authed && (
+                      {isOwner && (
                         <button onClick={ev => { ev.stopPropagation(); openDeck(d); }}
                           className="text-[11px] bg-neutral-700 hover:bg-neutral-600 text-white rounded px-1.5 py-0.5">Edit</button>
                       )}
-                      {authed && (
+                      {isOwner && (
                         <button onClick={ev => { ev.stopPropagation(); onDeleteDeck(d.id); }}
                           className="text-[11px] bg-rose-700 hover:bg-rose-600 text-white rounded px-1.5 py-0.5">✕</button>
+                      )}
+                      {authed && !isOwner && (
+                        <button onClick={ev => { ev.stopPropagation(); copyDeck(d); }}
+                          className="text-[11px] bg-violet-700 hover:bg-violet-600 text-white rounded px-1.5 py-0.5">Copy</button>
                       )}
                     </div>
                     <div className="font-semibold text-amber-200 text-base truncate pr-16">{d.name || "(untitled)"}</div>
@@ -1088,9 +1100,11 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
           <DeckViewModal
             deck={viewDeck}
             authed={authed}
+            isOwner={authed && (!viewDeck.author || viewDeck.author === username)}
             onSave={async (updated) => { const r = await onSaveDeck(updated); setViewDeck(updated); return r; }}
             onEdit={(d) => { setViewDeck(null); openDeck(d); }}
             onDelete={(id) => { onDeleteDeck(id); setViewDeck(null); }}
+            onCopy={(d) => { setViewDeck(null); copyDeck(d); }}
             onClose={() => setViewDeck(null)}
           />
         )}
@@ -1148,7 +1162,7 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
               onChange={e => setSearch(e.target.value)}
               placeholder="Search by name, race, class, keyword…"
             />
-            <select className={inputCls + " w-24 shrink-0 text-sm"} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+            <select className="w-24 shrink-0 rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1.5 text-sm text-neutral-100 focus:outline-none focus:ring-2 focus:ring-amber-500/60" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
               <option value="All">All Types</option>
               {BROWSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
