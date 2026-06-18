@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 
 /* ============================================================================
-   PROJECT DD — Card Builder (shared / server-backed)
+   Partyfall — Card Builder (shared / server-backed)
    - All cards live in one shared database (Upstash Redis via /api/*).
    - Viewing is open. Editing needs sign-in: a username (created by the owner
      in the Admin panel) + the shared write token.
@@ -1538,6 +1538,7 @@ export default function Page() {
   const [changelog, setChangelog] = useState([]);
   const [decks, setDecks] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [onlineHover, setOnlineHover] = useState(false);
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [view, setView] = useState("Unit");
@@ -1763,7 +1764,7 @@ export default function Page() {
       : subset;
 
     const header = [
-      `PROJECT DD — ${type === "All" ? "Complete Card Database" : `${type} Cards`}`,
+      `Partyfall — ${type === "All" ? "Complete Card Database" : `${type} Cards`}`,
       `Exported: ${new Date().toLocaleString()}`,
       `${ordered.length} card${ordered.length !== 1 ? "s" : ""}`,
       "═".repeat(48),
@@ -1775,11 +1776,21 @@ export default function Page() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `project-dd-${type.toLowerCase().replace(/\s+/g, "-")}.txt`;
+    a.download = `partyfall-${type.toLowerCase().replace(/\s+/g, "-")}.txt`;
     a.click();
     URL.revokeObjectURL(url);
     setExportPickerOpen(false);
   };
+
+  const _now = Date.now();
+  const onlineEntries = Object.entries(presence)
+    .filter(([, ts]) => _now - ts < 90000)
+    .map(([name]) => {
+      const lastChange = changelog
+        .filter(e => e.username === name)
+        .reduce((max, e) => Math.max(max, e.timestamp || 0), 0);
+      return { name, active: lastChange > 0 && _now - lastChange < 20 * 60 * 1000 };
+    });
 
   return (
     <div className="min-h-screen bg-neutral-950 text-neutral-100 flex">
@@ -1791,7 +1802,7 @@ export default function Page() {
             <path d="M4 6h16M4 12h16M4 18h16"/>
           </svg>
         </button>
-        <span className="font-bold text-amber-300">PROJECT DD</span>
+        <span className="font-bold text-amber-300">Partyfall</span>
         <span className="text-neutral-500 text-sm truncate">· {view}</span>
       </div>
 
@@ -1802,7 +1813,7 @@ export default function Page() {
 
       <aside className={"fixed md:static inset-y-0 left-0 z-50 w-60 shrink-0 border-r border-neutral-800 bg-neutral-950 md:bg-neutral-900/60 p-4 flex flex-col gap-1 overflow-y-auto transition-transform duration-200 " + (sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0")}>
         <div className="mb-2 flex items-center justify-between">
-          <div><h1 className="text-xl font-bold text-amber-300 leading-tight">PROJECT DD</h1><p className="text-xs text-neutral-500 hidden md:block">Card Builder · shared</p></div>
+          <div><h1 className="text-xl font-bold text-amber-300 leading-tight">Partyfall</h1><p className="text-xs text-neutral-500 hidden md:block">Card Builder · shared</p></div>
           <button className="md:hidden text-neutral-500 hover:text-white p-1" onClick={() => setSidebarOpen(false)}>✕</button>
         </div>
 
@@ -1841,6 +1852,33 @@ export default function Page() {
         <button onClick={() => { setRulebookOpen(true); setSidebarOpen(false); }} className="rounded-md px-3 py-2 text-sm text-left transition hover:bg-neutral-800 text-neutral-300">Draft Rulebook</button>
 
         <div className="mt-auto pt-4 space-y-2">
+          {/* Online users */}
+          <div
+            className="relative"
+            onMouseEnter={() => setOnlineHover(true)}
+            onMouseLeave={() => setOnlineHover(false)}
+          >
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-neutral-800 cursor-default select-none">
+              <span className={"w-2 h-2 rounded-full shrink-0 " + (onlineEntries.length > 0 ? "bg-emerald-400 shadow-[0_0_5px_#34d399]" : "bg-neutral-700")} />
+              <span className="text-xs text-neutral-500">
+                {onlineEntries.length > 0 ? `${onlineEntries.length} online` : "No one online"}
+              </span>
+            </div>
+            {onlineHover && onlineEntries.length > 0 && (
+              <div className="absolute bottom-full left-0 mb-1.5 bg-neutral-950 border border-neutral-700 rounded-lg shadow-2xl p-2 min-w-[170px] z-50">
+                <p className="text-[9px] uppercase tracking-widest text-neutral-600 px-1 pb-1.5 font-bold">Online Now</p>
+                {onlineEntries.map(({ name, active }) => (
+                  <div key={name} className="flex items-center gap-2 px-1 py-1">
+                    <span className={"w-1.5 h-1.5 rounded-full shrink-0 " + (active ? "bg-emerald-400 shadow-[0_0_4px_#34d399]" : "bg-yellow-400")} />
+                    <span className="text-xs text-neutral-200 truncate">{name}</span>
+                    <span className={"text-[10px] ml-auto shrink-0 " + (active ? "text-emerald-600" : "text-yellow-700")}>{active ? "active" : "idle"}</span>
+                  </div>
+                ))}
+                <p className="text-[9px] text-neutral-700 px-1 pt-1.5">Yellow = no changes in 20 min</p>
+              </div>
+            )}
+          </div>
+
           <button onClick={() => { setExportPickerOpen(true); setSidebarOpen(false); }} className="w-full rounded-md bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-3 py-2 text-sm">⬇ Export Cards</button>
           <p className="text-[10px] text-neutral-600 text-center">{status || "Shared store · auto-synced"}</p>
         </div>
