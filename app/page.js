@@ -1663,9 +1663,10 @@ export default function Page() {
   const [filterTribe, setFilterTribe] = useState("");
   const [pageSize, setPageSize] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
+  const [sortBy, setSortBy] = useState("custom");
 
-  // reset page when filters/view change
-  useEffect(() => { setCurrentPage(1); }, [view, search, filterRace, filterClass, filterKeyword, filterTribe]);
+  // reset page when filters/view/sort change
+  useEffect(() => { setCurrentPage(1); }, [view, search, filterRace, filterClass, filterKeyword, filterTribe, sortBy]);
 
   // reset search/filters when switching tabs
   const switchView = (v) => { setView(v); localStorage.setItem("pd_view", v); setSearch(""); setFilterRace(""); setFilterClass(""); setFilterKeyword(""); setFilterTribe(""); setFilterOpen(false); setSidebarOpen(false); };
@@ -1694,6 +1695,20 @@ export default function Page() {
     if (filterKeyword && !(c.keywords || []).includes(filterKeyword)) return false;
     if (filterTribe && !(c.tribes || []).includes(filterTribe)) return false;
     return true;
+  });
+
+  const cardIndexMap = new Map(cards.map((c, i) => [c.id, i]));
+  const deckUsageMap = (() => {
+    const m = {};
+    for (const d of decks) for (const { card, count } of d.cards || []) m[card.id] = (m[card.id] || 0) + count;
+    return m;
+  })();
+  const sortedVisible = sortBy === "custom" ? visible : [...visible].sort((a, b) => {
+    if (sortBy === "a-z")          return (a.name || "").localeCompare(b.name || "");
+    if (sortBy === "date-newest")  return (cardIndexMap.get(b.id) ?? Infinity) - (cardIndexMap.get(a.id) ?? Infinity);
+    if (sortBy === "date-oldest")  return (cardIndexMap.get(a.id) ?? Infinity) - (cardIndexMap.get(b.id) ?? Infinity);
+    if (sortBy === "deck-usage")   return (deckUsageMap[b.id] || 0) - (deckUsageMap[a.id] || 0);
+    return 0;
   });
 
   const counts = CARD_TYPES.reduce((a, t) => { a[t] = cards.filter((c) => c.type === t).length; return a; }, {});
@@ -1738,7 +1753,7 @@ export default function Page() {
     await fetch("/api/order", { method: "PUT", headers: writeHeaders(), body: JSON.stringify({ type, ids }) });
   };
 
-  const canDrag = authed && !search && !filterRace && !filterClass && !filterKeyword && !filterTribe;
+  const canDrag = authed && !search && !filterRace && !filterClass && !filterKeyword && !filterTribe && sortBy === "custom";
 
   const handleDragStart = (e, id) => { if (!canDrag) return; setDragId(id); e.dataTransfer.effectAllowed = "move"; };
   const handleDragOver = (e, id) => { e.preventDefault(); if (canDrag) setDragOverId(id); };
@@ -1993,11 +2008,11 @@ export default function Page() {
                 {typeCards.length === 0 ? <>No {view} cards yet.{authed && <> Click <span className="text-amber-400 font-semibold">+ New {view}</span>.</>}</> : "No cards match your search."}
               </div>
             ) : (() => {
-              const totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
+              const totalPages = Math.max(1, Math.ceil(sortedVisible.length / pageSize));
               const pg = Math.min(currentPage, totalPages);
-              const pagedVisible = visible.slice((pg - 1) * pageSize, pg * pageSize);
+              const pagedVisible = sortedVisible.slice((pg - 1) * pageSize, pg * pageSize);
               const pageStart = (pg - 1) * pageSize + 1;
-              const pageEnd = Math.min(pg * pageSize, visible.length);
+              const pageEnd = Math.min(pg * pageSize, sortedVisible.length);
               return (
                 <>
                   {canDrag && <p className="text-[10px] text-neutral-600 mb-2">Drag cards to reorder · changes visible to all on refresh</p>}
@@ -2028,7 +2043,7 @@ export default function Page() {
                     <span className="text-sm text-neutral-500">
                       <span className="text-neutral-200 font-medium">{pageStart}–{pageEnd}</span>
                       {" "}of{" "}
-                      <span className="text-neutral-200 font-medium">{visible.length}</span>
+                      <span className="text-neutral-200 font-medium">{sortedVisible.length}</span>
                       {" · Page "}
                       <span className="text-neutral-200 font-medium">{pg}</span>
                       {" of "}
@@ -2047,6 +2062,18 @@ export default function Page() {
                       className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1.5 text-sm text-neutral-300 focus:outline-none focus:ring-2 focus:ring-amber-500/60"
                     >
                       {[5, 10, 20, 50, 100].map(n => <option key={n} value={n}>{n} / page</option>)}
+                    </select>
+
+                    <select
+                      value={sortBy}
+                      onChange={e => setSortBy(e.target.value)}
+                      className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1.5 text-sm text-neutral-300 focus:outline-none focus:ring-2 focus:ring-amber-500/60"
+                    >
+                      <option value="custom">Custom Order</option>
+                      <option value="a-z">A → Z</option>
+                      <option value="date-newest">Newest First</option>
+                      <option value="date-oldest">Oldest First</option>
+                      <option value="deck-usage">Deck Usage</option>
                     </select>
                   </div>
                 </>
