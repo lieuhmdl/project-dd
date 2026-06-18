@@ -1628,6 +1628,11 @@ export default function Page() {
   const [filterClass, setFilterClass] = useState("");
   const [filterKeyword, setFilterKeyword] = useState("");
   const [filterTribe, setFilterTribe] = useState("");
+  const [pageSize, setPageSize] = useState(20);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // reset page when filters/view change
+  useEffect(() => { setCurrentPage(1); }, [view, search, filterRace, filterClass, filterKeyword, filterTribe]);
 
   // reset search/filters when switching tabs
   const switchView = (v) => { setView(v); setSearch(""); setFilterRace(""); setFilterClass(""); setFilterKeyword(""); setFilterTribe(""); setFilterOpen(false); setSidebarOpen(false); };
@@ -1954,26 +1959,66 @@ export default function Page() {
               <div className="border border-dashed border-neutral-800 rounded-xl p-12 text-center text-neutral-500">
                 {typeCards.length === 0 ? <>No {view} cards yet.{authed && <> Click <span className="text-amber-400 font-semibold">+ New {view}</span>.</>}</> : "No cards match your search."}
               </div>
-            ) : (
-              <>
-                {canDrag && <p className="text-[10px] text-neutral-600 mb-2">Drag cards to reorder · changes visible to all on refresh</p>}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                  {visible.map((c) => (
-                    <div
-                      key={c.id}
-                      draggable={canDrag}
-                      onDragStart={(e) => handleDragStart(e, c.id)}
-                      onDragOver={(e) => handleDragOver(e, c.id)}
-                      onDrop={(e) => handleDrop(e, c.id)}
-                      onDragEnd={handleDragEnd}
-                      className={"transition-all duration-150 " + (canDrag ? "cursor-grab active:cursor-grabbing" : "") + (dragOverId === c.id && dragId !== c.id ? " ring-2 ring-amber-400 ring-offset-2 ring-offset-neutral-950 rounded-xl scale-[1.02]" : "") + (dragId === c.id ? " opacity-40" : "")}
+            ) : (() => {
+              const totalPages = Math.max(1, Math.ceil(visible.length / pageSize));
+              const pg = Math.min(currentPage, totalPages);
+              const pagedVisible = visible.slice((pg - 1) * pageSize, pg * pageSize);
+              const pageStart = (pg - 1) * pageSize + 1;
+              const pageEnd = Math.min(pg * pageSize, visible.length);
+              return (
+                <>
+                  {canDrag && <p className="text-[10px] text-neutral-600 mb-2">Drag cards to reorder · changes visible to all on refresh</p>}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {pagedVisible.map((c) => (
+                      <div
+                        key={c.id}
+                        draggable={canDrag}
+                        onDragStart={(e) => handleDragStart(e, c.id)}
+                        onDragOver={(e) => handleDragOver(e, c.id)}
+                        onDrop={(e) => handleDrop(e, c.id)}
+                        onDragEnd={handleDragEnd}
+                        className={"transition-all duration-150 " + (canDrag ? "cursor-grab active:cursor-grabbing" : "") + (dragOverId === c.id && dragId !== c.id ? " ring-2 ring-amber-400 ring-offset-2 ring-offset-neutral-950 rounded-xl scale-[1.02]" : "") + (dragId === c.id ? " opacity-40" : "")}
+                      >
+                        <CardTile card={c} canEdit={authed} onEdit={() => editCard(c)} onDelete={() => deleteCard(c.id)} />
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* pagination bar */}
+                  <div className="flex flex-wrap items-center justify-center gap-3 mt-6 pt-5 border-t border-neutral-800">
+                    <button
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={pg === 1}
+                      className="px-3 py-1.5 rounded-md bg-neutral-800 border border-neutral-700 text-sm text-neutral-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
+                    >← Prev</button>
+
+                    <span className="text-sm text-neutral-500">
+                      <span className="text-neutral-200 font-medium">{pageStart}–{pageEnd}</span>
+                      {" "}of{" "}
+                      <span className="text-neutral-200 font-medium">{visible.length}</span>
+                      {" · Page "}
+                      <span className="text-neutral-200 font-medium">{pg}</span>
+                      {" of "}
+                      <span className="text-neutral-200 font-medium">{totalPages}</span>
+                    </span>
+
+                    <button
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={pg === totalPages}
+                      className="px-3 py-1.5 rounded-md bg-neutral-800 border border-neutral-700 text-sm text-neutral-300 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition"
+                    >Next →</button>
+
+                    <select
+                      value={pageSize}
+                      onChange={e => { setPageSize(Number(e.target.value)); setCurrentPage(1); }}
+                      className="rounded-md bg-neutral-800 border border-neutral-700 px-2 py-1.5 text-sm text-neutral-300 focus:outline-none focus:ring-2 focus:ring-amber-500/60"
                     >
-                      <CardTile card={c} canEdit={authed} onEdit={() => editCard(c)} onDelete={() => deleteCard(c.id)} />
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
+                      {[5, 10, 20, 50, 100].map(n => <option key={n} value={n}>{n} / page</option>)}
+                    </select>
+                  </div>
+                </>
+              );
+            })()}
           </>
         ) : view === "Deckbuilder" ? (
           <DeckbuilderView cards={cards} decks={decks} authed={authed} username={username} users={users} onSaveDeck={saveDeckRemote} onDeleteDeck={deleteDeckRemote} />
