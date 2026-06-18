@@ -797,6 +797,21 @@ function DeckViewModal({ deck, authed, isOwner, onSave, onEdit, onDelete, onCopy
   const [desc, setDesc] = useState(deck.description || "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [previewCard, setPreviewCard] = useState(null);
+  const [previewPos, setPreviewPos] = useState({ x: 0, y: 0 });
+  const hoverTimer = useRef(null);
+  const mousePos   = useRef({ x: 0, y: 0 });
+  useEffect(() => () => clearTimeout(hoverTimer.current), []);
+  const startPreview = (e, card) => {
+    clearTimeout(hoverTimer.current);
+    mousePos.current = { x: e.clientX, y: e.clientY };
+    hoverTimer.current = setTimeout(() => {
+      setPreviewCard(card);
+      setPreviewPos({ x: mousePos.current.x, y: mousePos.current.y });
+    }, 1000);
+  };
+  const trackMouse  = (e) => { mousePos.current = { x: e.clientX, y: e.clientY }; };
+  const endPreview  = () => { clearTimeout(hoverTimer.current); setPreviewCard(null); };
 
   const DECK_ORDER  = ["Unit", "Event", "Artifact"];
   const TYPE_COLORS = { "Unit": "#8b5cf6", "Event": "#10b981", "Artifact": "#3b82f6" };
@@ -829,6 +844,7 @@ function DeckViewModal({ deck, authed, isOwner, onSave, onEdit, onDelete, onCopy
   };
 
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={onClose}>
       <div className="w-full max-w-2xl flex flex-col rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl overflow-hidden" style={{ maxHeight: "90vh" }} onClick={e => e.stopPropagation()}>
         {/* header */}
@@ -869,7 +885,10 @@ function DeckViewModal({ deck, authed, isOwner, onSave, onEdit, onDelete, onCopy
               <div>
                 <p className="text-[10px] uppercase tracking-wide text-neutral-500 mb-2 font-bold">Deck List</p>
                 {deck.companion && (
-                  <div className="mb-3">
+                  <div className="mb-3 rounded px-1 -mx-1 hover:bg-neutral-800/50 cursor-default transition"
+                    onMouseEnter={e => startPreview(e, deck.companion)}
+                    onMouseMove={trackMouse}
+                    onMouseLeave={endPreview}>
                     <p className="text-[10px] uppercase tracking-wide font-bold text-violet-400 mb-0.5">Companion</p>
                     <p className="text-sm text-neutral-100">{deck.companion.name}</p>
                     <p className="text-[11px] text-neutral-500">{[deck.companion.race, deck.companion.klass].filter(Boolean).join(" ")}</p>
@@ -881,7 +900,11 @@ function DeckViewModal({ deck, authed, isOwner, onSave, onEdit, onDelete, onCopy
                       {TYPE_PLURAL[g.type]} ({g.entries.reduce((s, e) => s + e.count, 0)})
                     </p>
                     {g.entries.map(({ card, count }) => (
-                      <div key={card.id} className="flex items-center gap-1.5 py-0.5 text-sm">
+                      <div key={card.id}
+                        className="flex items-center gap-1.5 py-0.5 px-1 -mx-1 rounded text-sm hover:bg-neutral-800/50 cursor-default transition"
+                        onMouseEnter={e => startPreview(e, card)}
+                        onMouseMove={trackMouse}
+                        onMouseLeave={endPreview}>
                         <span className="text-neutral-500 text-xs w-5 text-right shrink-0">×{count}</span>
                         <span className="text-neutral-200 flex-grow">{card.name}</span>
                         <span className="text-neutral-600 text-xs shrink-0">P{card.provisions||0} M{card.mana||0}</span>
@@ -903,6 +926,16 @@ function DeckViewModal({ deck, authed, isOwner, onSave, onEdit, onDelete, onCopy
         </div>
       </div>
     </div>
+    {previewCard && (
+      <div className="fixed z-[200] pointer-events-none drop-shadow-2xl"
+        style={{
+          left: Math.max(8, Math.min(previewPos.x + 16, (typeof window !== "undefined" ? window.innerWidth : 1200) - 285)),
+          top:  Math.max(8, Math.min(previewPos.y - 120, (typeof window !== "undefined" ? window.innerHeight : 800) - 440)),
+        }}>
+        <CardTile card={previewCard} canEdit={false} />
+      </div>
+    )}
+    </>
   );
 }
 
