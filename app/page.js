@@ -513,7 +513,7 @@ function ChangeLogView({ changelog }) {
   return (
     <div className="max-w-2xl">
       <h2 className="text-xl font-semibold text-amber-200 mb-1">Change Log</h2>
-      <p className="text-sm text-neutral-400 mb-4">All card additions, edits, and deletions — click any entry to see details.</p>
+      <p className="text-sm text-neutral-400 mb-4">All card and deck additions, edits, and deletions — click any entry to see details.</p>
       {changelog.length === 0 ? (
         <div className="border border-dashed border-neutral-800 rounded-xl p-10 text-center text-neutral-500">No changes recorded yet.</div>
       ) : (
@@ -529,7 +529,7 @@ function ChangeLogView({ changelog }) {
                 <span className={"shrink-0 text-xs font-semibold uppercase tracking-wide w-14 " + (actionColor[e.action] || "text-neutral-400")}>{e.action}</span>
                 <span className="flex-grow text-sm text-neutral-100 truncate">
                   <span className="font-semibold">{e.cardName}</span>
-                  <span className="text-neutral-500 ml-1.5 text-xs">{e.cardType}</span>
+                  <span className={"ml-1.5 text-xs " + (e.cardType === "Deck" ? "text-violet-400" : "text-neutral-500")}>{e.cardType}</span>
                 </span>
                 <span className="shrink-0 text-xs text-neutral-500">{e.username}</span>
                 <span className="shrink-0 text-xs text-neutral-600 w-16 text-right">{timeAgo(e.timestamp)}</span>
@@ -563,7 +563,26 @@ function ChangeLogView({ changelog }) {
                     <p className="text-sm text-neutral-500">No field differences recorded.</p>
                   )}
 
-                  {/* Creates and deletes: show snapshot */}
+                  {/* Deck creates/deletes: show deck snapshot */}
+                  {(e.action === "created" || e.action === "deleted") && e.deckSnapshot && (
+                    <div>
+                      <p className="text-[10px] uppercase tracking-widest text-neutral-400 mb-2">Deck snapshot</p>
+                      <div className="space-y-1">
+                        {[["Name","name"],["Author","author"],["Companion","companion"],["Total Cards","totalCards"],["Description","description"]].map(([label, key]) => {
+                          const val = String(e.deckSnapshot[key] ?? "");
+                          if (!val) return null;
+                          return (
+                            <div key={key} className="grid grid-cols-[100px_1fr] gap-2 text-xs">
+                              <span className="text-neutral-500 uppercase tracking-wide text-[10px] pt-0.5">{label}</span>
+                              <span className="text-neutral-200 whitespace-pre-wrap break-words">{val}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Card creates/deletes: show card snapshot */}
                   {(e.action === "created" || e.action === "deleted") && e.snapshot && (
                     <div>
                       <p className="text-[10px] uppercase tracking-widest text-neutral-400 mb-2">Card snapshot</p>
@@ -581,7 +600,7 @@ function ChangeLogView({ changelog }) {
                       </div>
                     </div>
                   )}
-                  {(e.action === "created" || e.action === "deleted") && !e.snapshot && (
+                  {(e.action === "created" || e.action === "deleted") && !e.snapshot && !e.deckSnapshot && (
                     <p className="text-sm text-neutral-500">No snapshot available for this entry.</p>
                   )}
                 </div>
