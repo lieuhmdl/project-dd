@@ -1574,7 +1574,7 @@ export default function Page() {
   const [onlineHover, setOnlineHover] = useState(false);
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
-  const [view, setView] = useState("Unit");
+  const [view, setView] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("pd_view") || "Unit" : "Unit"));
   const [rulebookOpen, setRulebookOpen] = useState(false);
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -1668,7 +1668,7 @@ export default function Page() {
   useEffect(() => { setCurrentPage(1); }, [view, search, filterRace, filterClass, filterKeyword, filterTribe]);
 
   // reset search/filters when switching tabs
-  const switchView = (v) => { setView(v); setSearch(""); setFilterRace(""); setFilterClass(""); setFilterKeyword(""); setFilterTribe(""); setFilterOpen(false); setSidebarOpen(false); };
+  const switchView = (v) => { setView(v); localStorage.setItem("pd_view", v); setSearch(""); setFilterRace(""); setFilterClass(""); setFilterKeyword(""); setFilterTribe(""); setFilterOpen(false); setSidebarOpen(false); };
 
   const isTypeView = CARD_TYPES.includes(view);
 
