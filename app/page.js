@@ -767,6 +767,138 @@ function PieChart({ slices, sz = 210 }) {
   );
 }
 
+// ---- unit import modal -------------------------------------------------------
+function ImportUnitModal({ onImport, onClose }) {
+  const [text, setText] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [error, setError] = useState("");
+
+  const parseAbility = (str) => {
+    if (!str?.trim()) return null;
+    str = str.trim();
+    const m = str.match(/^\(([^)]+)\)\s*/);
+    let prov = "", mana = "", body = str;
+    if (m) {
+      body = str.slice(m[0].length).trim();
+      const c = m[1];
+      const pm = c.match(/(\d+)\s*[Pp]/);
+      const mm = c.match(/(\d+)\s*[Mm]/);
+      if (pm) prov = pm[1];
+      if (mm) mana = mm[1];
+    }
+    return body ? { prov, mana, text: body } : null;
+  };
+
+  const parseLines = (raw) => {
+    return raw.trim().split(/\r?\n/).filter(l => l.trim()).map(line => {
+      const c = line.split("\t");
+      const get = (i) => (c[i] || "").trim();
+      const keywords = get(12) ? get(12).split(/[,;]/).map(k => k.trim()).filter(Boolean) : [];
+      const abilities = [get(14), get(15), get(16)].map(parseAbility).filter(Boolean);
+      return {
+        id: uid(),
+        type: "Unit",
+        name:       get(1),
+        rarity:     get(3) || "Common",
+        race:       get(5),
+        klass:      "",
+        position:   get(7) || "Frontline",
+        provisions: get(8) || "0",
+        mana:       get(9) || "0",
+        attack:     get(10) || "0",
+        health:     get(11) || "0",
+        keywords,
+        strike:     get(13),
+        abilities,
+        passive:    get(17),
+        tribes: [], text: "", flavor: "", author: "",
+      };
+    });
+  };
+
+  const parsed = text.trim() ? parseLines(text) : [];
+
+  const doImport = async () => {
+    if (!parsed.length) return;
+    setImporting(true); setError("");
+    try {
+      await onImport(parsed);
+      onClose();
+    } catch (e) {
+      setError("Import failed — check console.");
+    }
+    setImporting(false);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/70 p-4 overflow-y-auto" onClick={onClose}>
+      <div className="w-full max-w-2xl my-6 flex flex-col rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-800 shrink-0" style={{ background: "rgba(245,158,11,0.06)" }}>
+          <div>
+            <h2 className="text-lg font-semibold text-amber-200">Import Units</h2>
+            <p className="text-xs text-neutral-500 mt-0.5">Paste tab-separated rows — one card per line</p>
+          </div>
+          <button onClick={onClose} className="text-neutral-400 hover:text-white text-xl leading-none ml-4">✕</button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* column legend */}
+          <div className="rounded-lg bg-neutral-900 border border-neutral-800 p-3">
+            <p className="text-[9px] uppercase tracking-widest text-neutral-600 mb-1.5 font-bold">Expected column order</p>
+            <p className="text-[10px] text-neutral-500 leading-relaxed font-mono">
+              <span className="text-neutral-700">set#</span> · <span className="text-amber-300/80">name</span> · <span className="text-neutral-700">simpleName</span> · <span className="text-amber-300/80">rarity</span> · <span className="text-neutral-700">stage</span> · <span className="text-amber-300/80">race</span> · <span className="text-neutral-700">class</span> · <span className="text-amber-300/80">position</span> · <span className="text-amber-300/80">prov</span> · <span className="text-amber-300/80">mana</span> · <span className="text-amber-300/80">atk</span> · <span className="text-amber-300/80">hp</span> · <span className="text-amber-300/80">keywords</span> · <span className="text-amber-300/80">strike</span> · <span className="text-amber-300/80">ability1</span> · <span className="text-amber-300/80">ability2</span> · <span className="text-amber-300/80">ability3</span> · <span className="text-amber-300/80">passive</span>
+            </p>
+            <p className="text-[9px] text-neutral-700 mt-1">Dimmed columns are ignored. Ability costs like <span className="text-neutral-500">(1P)</span> or <span className="text-neutral-500">(2M)</span> are parsed automatically.</p>
+          </div>
+
+          {/* paste area */}
+          <textarea
+            className="w-full rounded-md bg-neutral-800 border border-neutral-700 px-3 py-2 text-xs text-neutral-200 font-mono placeholder-neutral-600 focus:outline-none focus:ring-2 focus:ring-amber-500/60 focus:border-amber-500/60 resize-none"
+            rows={6}
+            value={text}
+            onChange={e => setText(e.target.value)}
+            placeholder={"Paste rows here…\nHOB-U010\tGoblin Scrap Picker\t...\tCommon\t...\tGoblin\t...\tBackline\t1\t0\t1\t2\tBackline\tThrow scrap, deal 1.\t(1P) Bad Parts…\t\t\tPassive…"}
+          />
+
+          {/* preview */}
+          {parsed.length > 0 && (
+            <div>
+              <p className="text-[10px] uppercase tracking-wide text-neutral-500 mb-2 font-bold">{parsed.length} unit{parsed.length !== 1 ? "s" : ""} detected</p>
+              <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+                {parsed.map((card, i) => (
+                  <div key={i} className="flex items-center gap-2 rounded-lg bg-neutral-900 border border-neutral-800 px-3 py-2">
+                    <span className="text-amber-200 text-sm font-medium truncate flex-grow min-w-0">{card.name || <span className="text-neutral-600 italic">unnamed</span>}</span>
+                    <span className="shrink-0 text-[10px] text-neutral-500">{card.rarity}</span>
+                    {card.race && <span className="shrink-0 text-[10px] text-neutral-500">{card.race}</span>}
+                    <span className="shrink-0 text-[10px] text-neutral-500">{card.position}</span>
+                    <span className="shrink-0 text-[10px] text-amber-600/80">P{card.provisions} M{card.mana}</span>
+                    <span className="shrink-0 text-[10px] text-violet-400">{card.attack}/{card.health}</span>
+                    {card.keywords.length > 0 && <span className="shrink-0 text-[10px] text-emerald-600">{card.keywords.join(", ")}</span>}
+                    {card.abilities.length > 0 && <span className="shrink-0 text-[10px] text-neutral-600">{card.abilities.length} abil.</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {error && <p className="text-sm text-rose-400">{error}</p>}
+        </div>
+
+        <div className="flex items-center justify-between px-5 py-4 border-t border-neutral-800 shrink-0">
+          <button onClick={onClose} className="text-sm text-neutral-400 hover:text-white transition">Cancel</button>
+          <button
+            onClick={doImport}
+            disabled={parsed.length === 0 || importing}
+            className="rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-40 disabled:cursor-not-allowed text-black font-semibold px-5 py-2 text-sm transition"
+          >
+            {importing ? "Importing…" : `Import ${parsed.length} Unit${parsed.length !== 1 ? "s" : ""}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---- cost bar chart (used by DeckViewModal) ---------------------------------
 function CostBarChart({ data, color, label }) {
   const max = Math.max(...data.map(d => d.value), 1);
@@ -1572,6 +1704,7 @@ export default function Page() {
   const [decks, setDecks] = useState([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [onlineHover, setOnlineHover] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [dragId, setDragId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [view, setView] = useState(() => (typeof window !== "undefined" ? localStorage.getItem("pd_view") || "Unit" : "Unit"));
@@ -1730,6 +1863,13 @@ export default function Page() {
     if (r.ok) { setCards((prev) => (prev.some((c) => c.id === draft.id) ? prev.map((c) => (c.id === draft.id ? draft : c)) : [...prev, draft])); setDraft(null); setStatus("Saved ✓"); }
     else { const d = await r.json().catch(() => ({})); alert("Couldn't save: " + (d.error || r.status)); }
   };
+  const importCards = async (imported) => {
+    for (const card of imported) {
+      const r = await fetch("/api/cards", { method: "POST", headers: writeHeaders(), body: JSON.stringify(card) });
+      if (r.ok) { const d = await r.json(); setCards(prev => { const i = prev.findIndex(c => c.id === d.card.id); return i >= 0 ? prev.map((c, j) => j === i ? d.card : c) : [...prev, d.card]; }); }
+    }
+  };
+
   const deleteCard = async (id) => {
     if (!confirm("Delete this card for everyone?")) return;
     const r = await fetch("/api/cards?id=" + encodeURIComponent(id), { method: "DELETE", headers: writeHeaders() });
@@ -1947,7 +2087,12 @@ export default function Page() {
           <>
             <div className="flex items-center justify-between mb-3">
               <div><h2 className="text-2xl font-bold text-neutral-100">{view}</h2><p className="text-sm text-neutral-500">{visible.length}{visible.length !== typeCards.length ? ` of ${typeCards.length}` : ""} card{visible.length === 1 ? "" : "s"}{!authed && " · read-only (sign in to edit)"}</p></div>
-              {authed && <button onClick={startNew} className="rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-semibold px-4 py-2 text-sm shadow">+ New {view}</button>}
+              {authed && (
+                <div className="flex items-center gap-2">
+                  {view === "Unit" && <button onClick={() => setImportOpen(true)} className="rounded-lg bg-neutral-700 hover:bg-neutral-600 border border-neutral-600 text-neutral-100 font-semibold px-4 py-2 text-sm shadow transition">↑ Import</button>}
+                  <button onClick={startNew} className="rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-semibold px-4 py-2 text-sm shadow">+ New {view}</button>
+                </div>
+              )}
             </div>
 
             {/* search + filter bar */}
@@ -2096,6 +2241,7 @@ export default function Page() {
       </main>
 
       {draft && <Editor draft={draft} setDraft={setDraft} keywords={keywords} onAddKeyword={addKeyword} onSave={saveDraft} onCancel={() => setDraft(null)} saving={saving} users={users} races={races} />}
+      {importOpen && <ImportUnitModal onImport={importCards} onClose={() => setImportOpen(false)} />}
       {rulebookOpen && <RulebookModal onClose={() => setRulebookOpen(false)} />}
       {exportPickerOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70" onClick={() => setExportPickerOpen(false)}>
