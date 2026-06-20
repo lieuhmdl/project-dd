@@ -52,7 +52,7 @@ function Select({ label, value, onChange, options, placeholder = "—", disabled
 }
 
 // ---- card tile ------------------------------------------------------------
-function CardTile({ card, canEdit, onEdit, onDelete }) {
+function CardTile({ card, canEdit, onEdit, onDelete, keywords = [] }) {
   const unitLike = UNIT_LIKE.includes(card.type);
   const subtitle = unitLike
     ? [card.race && card.klass ? `${card.race} ${card.klass}` : (card.race || card.klass), card.position, card.rarity].filter(Boolean).join("  \u00b7  ")
@@ -61,6 +61,23 @@ function CardTile({ card, canEdit, onEdit, onDelete }) {
   const bodyLines = unitLike
     ? [card.strike ? `Strike: ${card.strike}` : "", ...(card.abilities || []).map(abilityLine).filter(Boolean).map((a) => `\u2022 ${a}`), card.passive ? `Passive: ${card.passive}` : ""].filter(Boolean)
     : [...(card.text ? [card.text] : []), ...(hasActiveAbilities ? (card.abilities || []).map(abilityLine).filter(Boolean).map((a) => `\u2022 ${a}`) : [])];
+
+  const [kwPreview, setKwPreview] = useState(null);
+  const [kwPos, setKwPos]         = useState({ x: 0, y: 0 });
+  const kwTimer = useRef(null);
+  const kwMouse = useRef({ x: 0, y: 0 });
+  useEffect(() => () => clearTimeout(kwTimer.current), []);
+  const startKw = (e, name) => {
+    clearTimeout(kwTimer.current);
+    kwMouse.current = { x: e.clientX, y: e.clientY };
+    kwTimer.current = setTimeout(() => {
+      const def = keywords.find((k) => k.name === name);
+      if (def) { setKwPreview(def); setKwPos({ x: kwMouse.current.x, y: kwMouse.current.y }); }
+    }, 1000);
+  };
+  const trackKw = (e) => { kwMouse.current = { x: e.clientX, y: e.clientY }; };
+  const endKw   = () => { clearTimeout(kwTimer.current); setKwPreview(null); };
+
   return (
     <div className="group relative w-full rounded-xl border border-neutral-700 bg-neutral-900 shadow-lg overflow-hidden flex flex-col">
       <div className="flex items-center justify-between gap-2 px-3 py-2" style={{ background: "#3b2d52" }}>
@@ -69,7 +86,16 @@ function CardTile({ card, canEdit, onEdit, onDelete }) {
       </div>
       <div className="px-3 py-1 text-[11px] italic text-neutral-300 bg-neutral-800/70 border-b border-neutral-700/60">{subtitle}</div>
       {card.keywords && card.keywords.length > 0 && (
-        <div className="px-3 py-1.5 flex flex-wrap gap-1">{card.keywords.map((k) => <span key={k} className="text-[10px] font-semibold text-amber-300 border border-amber-500/40 rounded px-1.5 py-0.5">{k}</span>)}</div>
+        <div className="px-3 py-1.5 flex flex-wrap gap-1">
+          {card.keywords.map((k) => (
+            <span key={k}
+              className={"text-[10px] font-semibold text-amber-300 border border-amber-500/40 rounded px-1.5 py-0.5" + (keywords.some((kw) => kw.name === k) ? " cursor-help" : "")}
+              onMouseEnter={(e) => startKw(e, k)}
+              onMouseMove={trackKw}
+              onMouseLeave={endKw}
+            >{k}</span>
+          ))}
+        </div>
       )}
       <div className="px-3 py-2 text-[12px] text-neutral-200 leading-snug flex-grow min-h-[64px] space-y-0.5">
         {bodyLines.length ? bodyLines.map((l, i) => <div key={i}>{l}</div>) : <div className="text-neutral-600">No rules text yet.</div>}
@@ -89,6 +115,17 @@ function CardTile({ card, canEdit, onEdit, onDelete }) {
         <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition">
           <button onClick={onEdit} className="text-[11px] bg-neutral-700 hover:bg-neutral-600 text-white rounded px-2 py-0.5">Edit</button>
           <button onClick={onDelete} className="text-[11px] bg-rose-700 hover:bg-rose-600 text-white rounded px-2 py-0.5">✕</button>
+        </div>
+      )}
+      {kwPreview && (
+        <div className="fixed z-[300] pointer-events-none" style={{
+          left: Math.max(8, Math.min(kwPos.x + 14, (typeof window !== "undefined" ? window.innerWidth : 1200) - 224)),
+          top:  kwPos.y + 16,
+        }}>
+          <div className="bg-neutral-950 border border-amber-500/50 rounded-lg shadow-2xl p-3 w-52">
+            <p className="text-xs font-bold text-amber-300 mb-1">{kwPreview.name}</p>
+            <p className="text-xs text-neutral-300 leading-snug">{kwPreview.desc}</p>
+          </div>
         </div>
       )}
     </div>
@@ -213,7 +250,7 @@ function Editor({ draft, setDraft, keywords, onAddKeyword, onSave, onCancel, sav
           </div>
           <div className="flex flex-col items-center">
             <p className="text-[11px] uppercase tracking-wide text-neutral-500 mb-2">Live preview</p>
-            <CardTile card={draft} canEdit={false} onEdit={() => {}} onDelete={() => {}} />
+            <CardTile card={draft} canEdit={false} onEdit={() => {}} onDelete={() => {}} keywords={keywords} />
           </div>
         </div>
         <div className="flex justify-end gap-2 px-5 py-3 border-t border-neutral-800">
@@ -925,7 +962,7 @@ function CostBarChart({ data, color, label }) {
 }
 
 // ---- deck view modal --------------------------------------------------------
-function DeckViewModal({ deck, authed, isOwner, onSave, onEdit, onDelete, onCopy, onClose }) {
+function DeckViewModal({ deck, authed, isOwner, onSave, onEdit, onDelete, onCopy, onClose, keywords = [] }) {
   const [desc, setDesc] = useState(deck.description || "");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -1064,7 +1101,7 @@ function DeckViewModal({ deck, authed, isOwner, onSave, onEdit, onDelete, onCopy
           left: Math.max(8, Math.min(previewPos.x + 16, (typeof window !== "undefined" ? window.innerWidth : 1200) - 285)),
           top:  Math.max(8, Math.min(previewPos.y - 120, (typeof window !== "undefined" ? window.innerHeight : 800) - 440)),
         }}>
-        <CardTile card={previewCard} canEdit={false} />
+        <CardTile card={previewCard} canEdit={false} keywords={keywords} />
       </div>
     )}
     </>
@@ -1072,7 +1109,7 @@ function DeckViewModal({ deck, authed, isOwner, onSave, onEdit, onDelete, onCopy
 }
 
 // ---- deckbuilder view -------------------------------------------------------
-function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, onDeleteDeck }) {
+function DeckbuilderView({ cards, decks, authed, username, users, keywords = [], onSaveDeck, onDeleteDeck }) {
   // step: "database" | "companion" | "building"
   const [step, setStep] = useState("database");
   const [companion, setCompanion] = useState(null);
@@ -1291,6 +1328,7 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
             onDelete={(id) => { onDeleteDeck(id); setViewDeck(null); }}
             onCopy={(d) => { setViewDeck(null); copyDeck(d); }}
             onClose={() => setViewDeck(null)}
+            keywords={keywords}
           />
         )}
       </>
@@ -1530,7 +1568,7 @@ function DeckbuilderView({ cards, decks, authed, username, users, onSaveDeck, on
             left: Math.max(8, Math.min(previewPos.x + 16, (typeof window !== "undefined" ? window.innerWidth : 1200) - 285)),
             top:  Math.max(8, Math.min(previewPos.y - 120, (typeof window !== "undefined" ? window.innerHeight : 800) - 440)),
           }}>
-          <CardTile card={previewCard} canEdit={false} />
+          <CardTile card={previewCard} canEdit={false} keywords={keywords} />
         </div>
       )}
 
@@ -2172,7 +2210,7 @@ export default function Page() {
                         onDragEnd={handleDragEnd}
                         className={"transition-all duration-150 " + (canDrag ? "cursor-grab active:cursor-grabbing" : "") + (dragOverId === c.id && dragId !== c.id ? " ring-2 ring-amber-400 ring-offset-2 ring-offset-neutral-950 rounded-xl scale-[1.02]" : "") + (dragId === c.id ? " opacity-40" : "")}
                       >
-                        <CardTile card={c} canEdit={authed} onEdit={() => editCard(c)} onDelete={() => deleteCard(c.id)} />
+                        <CardTile card={c} canEdit={authed} onEdit={() => editCard(c)} onDelete={() => deleteCard(c.id)} keywords={keywords} />
                       </div>
                     ))}
                   </div>
@@ -2226,7 +2264,7 @@ export default function Page() {
             })()}
           </>
         ) : view === "Deckbuilder" ? (
-          <DeckbuilderView cards={cards} decks={decks} authed={authed} username={username} users={users} onSaveDeck={saveDeckRemote} onDeleteDeck={deleteDeckRemote} />
+          <DeckbuilderView cards={cards} decks={decks} authed={authed} username={username} users={users} keywords={keywords} onSaveDeck={saveDeckRemote} onDeleteDeck={deleteDeckRemote} />
         ) : view === "Keywords" ? (
           <KeywordsView keywords={keywords} canEdit={authed} onSet={setKeywordsRemote} />
         ) : view === "Lore" ? (
