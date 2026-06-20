@@ -12,8 +12,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata = {
-  title: "dd card gen",
-  description: "dd card gen",
+  title: "Partyfall Card Database",
+  description: "Partyfall Card Database",
 };
 
 export default function RootLayout({ children }) {
