@@ -1150,9 +1150,14 @@ function DeckbuilderView({ cards, decks, authed, username, users, keywords = [],
   const DECK_MIN = 30;
   const isLegal = deckTotal >= DECK_MIN && deckTotal <= DECK_MAX && deck.every(d => d.count <= cardLimit(d.card));
 
+  const companionTribes = companion?.tribes?.length ? companion.tribes : null;
   const browseable = cards.filter(c => {
     if (!BROWSE_TYPES.includes(c.type)) return false;
     if (typeFilter !== "All" && c.type !== typeFilter) return false;
+    if (c.type === "Unit" && companionTribes) {
+      const unitAffiliations = [c.race, ...(c.tribes || [])].filter(Boolean);
+      if (!unitAffiliations.some(a => companionTribes.includes(a))) return false;
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       return [c.name, c.race, c.klass, ...(c.keywords || []), ...(c.tribes || [])].some(v => v?.toLowerCase().includes(q));
