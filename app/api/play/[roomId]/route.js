@@ -341,6 +341,23 @@ function handleAddToken(room, { playerId, slotIndex, tokenName, position }) {
   return { ok: true };
 }
 
+function handleStartSolo(room, { playerId }) {
+  const slot = playerSlot(room, playerId);
+  if (!slot) return { error: "Not in room" };
+  if (room.status !== "lobby") return { error: "Game already started" };
+  if (!room.players[slot]?.processedDeck) return { error: "Select a deck first" };
+  if (room.players.p2 && !room.players.p2.isBot) return { error: "Room already has two players" };
+  const botId = "bot-" + room.roomId;
+  room.players.p2 = {
+    id: botId, name: "Test Bot", deckId: "solo-test", ready: true, isBot: true,
+    processedDeck: room.players[slot].processedDeck,
+  };
+  room.players[slot].ready = true;
+  startGame(room);
+  addLog(room, "Solo test mode — controlling both sides.", "system");
+  return { ok: true };
+}
+
 function handleChat(room, { playerId, message }) {
   const slot = playerSlot(room, playerId);
   if (!slot) return { error: "Not in room" };
@@ -423,6 +440,7 @@ const ACTION_MAP = {
   toggle_marker:       handleToggleMarker,
   add_token:           handleAddToken,
   concede:             handleConcede,
+  start_solo:          handleStartSolo,
   chat:                handleChat,
   leave_room:          handleLeaveRoom,
   request_rematch:     handleRequestRematch,

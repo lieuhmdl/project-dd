@@ -25,21 +25,22 @@ function getOrCreatePlayer() {
 }
 
 // ---- legality ---------------------------------------------------------------
+// Companion is stored as deck.companion (a card object), NOT inside deck.cards.
+// deck.cards contains only the main deck entries [{card, count}].
 function checkLegality(deck) {
-  const cards = deck.cards || [];
-  const companions = cards.filter(e => COMPANION_TYPES.includes(e.card.type));
-  const mainCards  = cards.filter(e => !COMPANION_TYPES.includes(e.card.type));
+  const companion = deck.companion || null;
+  // Defensively filter out any companion-type entries that may have snuck into cards
+  const mainCards = (deck.cards || []).filter(e => !COMPANION_TYPES.includes(e.card?.type));
   const total = mainCards.reduce((s, e) => s + e.count, 0);
   const errors = [];
-  if (companions.length === 0) errors.push("Missing a Companion (Ancient Legend or Ancient Relic).");
-  if (companions.length > 1)   errors.push("Only 1 Companion allowed.");
-  if (total < 30)  errors.push(`Main deck too small (${total}/30 min).`);
-  if (total > 40)  errors.push(`Main deck too large (${total}/40 max).`);
+  if (!companion) errors.push("Missing a Companion (Ancient Legend or Ancient Relic).");
+  if (total < 30) errors.push(`Main deck too small (${total}/30 min).`);
+  if (total > 40) errors.push(`Main deck too large (${total}/40 max).`);
   for (const e of mainCards) {
-    const limit = e.card.type === "Unit" ? 2 : 3;
+    const limit = e.card?.type === "Unit" ? 2 : 3;
     if (e.count > limit) errors.push(`${e.card.name}: max ${limit} copies.`);
   }
-  return { legal: errors.length === 0, errors, companion: companions[0]?.card || null, mainCards };
+  return { legal: errors.length === 0, errors, companion, mainCards };
 }
 
 function buildProcessedDeck(deck) {
@@ -500,7 +501,18 @@ function LobbyScreen({ room, mySlot, playerId, roomId, onRoomUpdate, onLeft }) {
             {readying ? "…" : "Ready!"}
           </button>
         )}
-        {me?.ready && <p className="text-emerald-400 text-sm font-semibold text-center">✓ Waiting for opponent…</p>}
+        {me?.ready && !opp && (
+          <div className="space-y-2">
+            <p className="text-emerald-400 text-sm font-semibold text-center">✓ Waiting for opponent…</p>
+            <button onClick={async () => {
+              const res = await roomAction(roomId, { action: "start_solo", playerId });
+              if (res.room) onRoomUpdate(res.room);
+            }} className="w-full py-2 rounded-lg bg-amber-800/60 hover:bg-amber-700/60 text-amber-300 text-xs font-medium transition border border-amber-700/40">
+              Solo Test (control both sides)
+            </button>
+          </div>
+        )}
+        {me?.ready && opp && <p className="text-emerald-400 text-sm font-semibold text-center">✓ Waiting for opponent…</p>}
         <button onClick={leaveRoom} className="w-full py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-500 hover:text-neutral-300 transition text-xs">Leave Room</button>
       </div>
     </div>
@@ -512,15 +524,30 @@ function LobbyScreen({ room, mySlot, playerId, roomId, onRoomUpdate, onLeft }) {
 // ============================================================================
 function MulliganScreen({ room, mySlot, playerId, roomId, onRoomUpdate }) {
   const ps = room.gs?.[mySlot];
+  const oppSlot = mySlot === "p1" ? "p2" : "p1";
+  const isSolo = !!room.players[oppSlot]?.isBot;
+  const botId = isSolo ? room.players[oppSlot]?.id : null;
   const [selected, setSelected] = useState(new Set());
   const [submitting, setSubmitting] = useState(false);
+
+  // In solo mode, auto-submit the bot's mulligan so the game can start
+  useEffect(() => {
+    if (!isSolo || !botId) return;
+    const ops = room.gs?.[oppSlot];
+    if (ops && !ops.mulliganDone) {
+      roomAction(roomId, { action: "mulligan", playerId: botId, indices: [] }).then(res => {
+        if (res.room) onRoomUpdate(res.room);
+      });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!ps || ps.mulliganDone) {
     return (
       <div className="min-h-screen bg-neutral-950 flex items-center justify-center text-neutral-400">
         <div className="text-center space-y-2">
           <p className="text-amber-200 font-semibold text-lg">Mulligan submitted!</p>
-          <p className="text-sm">Waiting for opponent…</p>
+          <p className="text-sm">{isSolo ? "Starting solo test…" : "Waiting for opponent…"}</p>
           <div className="w-4 h-4 border-2 border-amber-500/40 border-t-amber-400 rounded-full animate-spin mx-auto mt-3" />
         </div>
       </div>
@@ -609,16 +636,21 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
   }
   function leaveZoom() { zoomInfoRef.current = null; setZoomInfo(null); }
 
-  const gs   = room.gs;
-  const ps   = gs?.[mySlot];
+  const gs      = room.gs;
+  const ps      = gs?.[mySlot];
   const oppSlot = mySlot === "p1" ? "p2" : "p1";
-  const ops  = gs?.[oppSlot];
-  const me   = room.players[mySlot];
-  const opp  = room.players[oppSlot];
+  const ops     = gs?.[oppSlot];
+  const me      = room.players[mySlot];
+  const opp     = room.players[oppSlot];
   const isMyTurn = room.currentTurn === mySlot;
   const isEnded  = room.status === "ended";
   const myWon    = room.winner === mySlot;
   const oppWon   = room.winner === oppSlot;
+
+  // Solo test mode — opponent is a bot, P1 controls both sides
+  const isSolo  = !!opp?.isBot;
+  const botId   = isSolo ? opp.id : null;
+  const [soloSide, setSoloSide] = useState(mySlot); // which side P1 is currently controlling
 
   const dispatch = useCallback(async body => {
     const res = await roomAction(roomId, { ...body, playerId });
@@ -626,42 +658,71 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
     return res;
   }, [roomId, playerId, onRoomUpdate]);
 
+  // Dispatch an action as the bot (opponent) side in solo mode
+  const dispatchBot = useCallback(async body => {
+    if (!botId) return;
+    const res = await roomAction(roomId, { ...body, playerId: botId });
+    if (res.room) onRoomUpdate(res.room);
+    return res;
+  }, [roomId, botId, onRoomUpdate]);
+
+  // In solo mode, use the right dispatcher based on which side is active
+  const dispatchFor = useCallback(async (slot, body) => {
+    return slot === mySlot ? dispatch(body) : dispatchBot(body);
+  }, [mySlot, dispatch, dispatchBot]);
+
   // ---- drag & drop ----------------------------------------------------------
-  const onBFDragStart = (e, i) => { setDragSrc({ type: "bf", index: i }); e.dataTransfer.effectAllowed = "move"; };
-  const onHandDragStart = (e, i) => { setDragSrc({ type: "hand", index: i }); e.dataTransfer.effectAllowed = "move"; };
-  const onBFDragOver = (e, i) => { if (!dragSrc || ps?.battlefield[i]) return; e.preventDefault(); };
+  // dragSrc carries { type, index, side } so we know which player's zone it came from
+  const onBFDragStart = (e, i, side) => { setDragSrc({ type: "bf", index: i, side: side || mySlot }); e.dataTransfer.effectAllowed = "move"; };
+  const onHandDragStart = (e, i, side) => { setDragSrc({ type: "hand", index: i, side: side || mySlot }); e.dataTransfer.effectAllowed = "move"; };
+
+  function bfForSide(side) { return side === mySlot ? ps?.battlefield : ops?.battlefield; }
+
+  const onBFDragOver = (e, i, side) => {
+    if (!dragSrc) return;
+    if (bfForSide(side)?.[i]) return;
+    e.preventDefault();
+  };
   const onGYDragOver  = e => { if (dragSrc?.type === "bf") e.preventDefault(); };
   const onExDragOver  = e => { if (dragSrc) e.preventDefault(); };
 
-  async function onBFDrop(e, slotIndex) {
+  async function onBFDrop(e, slotIndex, side) {
     e.preventDefault();
     if (!dragSrc) return;
-    if (dragSrc.type === "hand") {
-      const card = ps.hand[dragSrc.index];
-      await dispatch({ action: "play_card", handIndex: dragSrc.index, slotIndex, position: card?.position || "Frontline" });
+    const act = body => dispatchFor(side, body);
+    if (dragSrc.type === "hand" && dragSrc.side === side) {
+      const hand = side === mySlot ? ps.hand : ops.hand;
+      const card = hand[dragSrc.index];
+      await act({ action: "play_card", handIndex: dragSrc.index, slotIndex, position: card?.position || "Frontline" });
       setSelectedHand(null);
-    } else if (dragSrc.type === "bf" && dragSrc.index !== slotIndex) {
-      await dispatch({ action: "move_card", fromSlot: dragSrc.index, toSlot: slotIndex });
+    } else if (dragSrc.type === "bf" && dragSrc.side === side && dragSrc.index !== slotIndex) {
+      await act({ action: "move_card", fromSlot: dragSrc.index, toSlot: slotIndex });
     }
     setDragSrc(null);
   }
-  async function onGYDrop(e) {
+  async function onGYDrop(e, side) {
     e.preventDefault();
-    if (dragSrc?.type === "bf") await dispatch({ action: "send_to_graveyard", slotIndex: dragSrc.index });
+    if (dragSrc?.type === "bf" && dragSrc.side === side)
+      await dispatchFor(side, { action: "send_to_graveyard", slotIndex: dragSrc.index });
     setDragSrc(null);
   }
-  async function onExDrop(e) {
+  async function onExDrop(e, side) {
     e.preventDefault();
-    if (dragSrc?.type === "bf")   await dispatch({ action: "send_to_exile", slotIndex: dragSrc.index });
-    if (dragSrc?.type === "hand") { await dispatch({ action: "exile_from_hand", handIndex: dragSrc.index }); setSelectedHand(null); }
+    if (dragSrc?.type === "bf" && dragSrc.side === side)
+      await dispatchFor(side, { action: "send_to_exile", slotIndex: dragSrc.index });
+    if (dragSrc?.type === "hand" && dragSrc.side === side) {
+      await dispatchFor(side, { action: "exile_from_hand", handIndex: dragSrc.index });
+      setSelectedHand(null);
+    }
     setDragSrc(null);
   }
 
-  async function onSlotClick(slotIndex) {
-    if (!selectedHand) return;
-    if (ps.battlefield[slotIndex]) { setSelectedHand(null); return; }
-    const card = ps.hand[selectedHand.index];
-    await dispatch({ action: "play_card", handIndex: selectedHand.index, slotIndex, position: card?.position || "Frontline" });
+  async function onSlotClick(slotIndex, side) {
+    if (!selectedHand || selectedHand.side !== side) return;
+    if (bfForSide(side)?.[slotIndex]) { setSelectedHand(null); return; }
+    const hand = side === mySlot ? ps.hand : ops.hand;
+    const card = hand[selectedHand.index];
+    await dispatchFor(side, { action: "play_card", handIndex: selectedHand.index, slotIndex, position: card?.position || "Frontline" });
     setSelectedHand(null);
   }
 
@@ -673,7 +734,7 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
   }
 
   // ---- sub-components -------------------------------------------------------
-  function LegendZoneCard({ slot, isOwn }) {
+  function LegendZoneCard({ slot, isOwn, onClickOverride }) {
     if (!slot) return (
       <div className="w-14 h-20 rounded-lg border border-dashed border-neutral-700/50 flex items-center justify-center text-neutral-700 text-[8px] text-center leading-tight px-1">Legend Zone</div>
     );
@@ -682,7 +743,7 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
     return (
       <div className={"relative w-14 h-20 rounded-lg border overflow-hidden cursor-pointer transition " + (isOwn ? "border-amber-600/60 hover:border-amber-400" : "border-amber-800/40")}
         style={{ background: "linear-gradient(160deg,#1c1917 0%,#0f0f0f 100%)" }}
-        onClick={isOwn ? () => setDetailCard({ card, slot, slotIndex: -1, isLegend: true }) : undefined}
+        onClick={onClickOverride || (isOwn ? () => setDetailCard({ card, slot, slotIndex: -1, side: mySlot, isLegend: true }) : undefined)}
         onMouseEnter={e => enterZoom(card, slot, e)} onMouseLeave={leaveZoom}
       >
         <div className="h-1 w-full bg-amber-500" />
@@ -717,28 +778,30 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
     );
   }
 
-  function renderBF(slots, isOwn) {
+  function renderBF(slots, side) {
+    const isOwn = side === mySlot || isSolo;
+    const handSelected = selectedHand?.side === side ? selectedHand : null;
     return (
       <div className="flex gap-1.5 px-2 py-2 flex-grow">
         {slots.map((slot, i) => (
           <div key={i}
             className={"rounded-lg transition h-28 flex-1 border-2 border-dashed " +
-              (!slot ? (isOwn && selectedHand ? "border-amber-600/50 hover:border-amber-400/70 cursor-pointer" : "border-neutral-800/30") : "border-transparent")}
-            onDragOver={isOwn ? e => onBFDragOver(e, i) : undefined}
-            onDrop={isOwn ? e => onBFDrop(e, i) : undefined}
-            onClick={isOwn && !slot ? () => onSlotClick(i) : undefined}
+              (!slot ? (isOwn && handSelected ? "border-amber-600/50 hover:border-amber-400/70 cursor-pointer" : "border-neutral-800/30") : "border-transparent")}
+            onDragOver={isOwn ? e => onBFDragOver(e, i, side) : undefined}
+            onDrop={isOwn ? e => onBFDrop(e, i, side) : undefined}
+            onClick={isOwn && !slot ? () => onSlotClick(i, side) : undefined}
           >
             {slot && (
               <BFCard slot={slot} isOwn={isOwn}
-                isSelected={detailCard?.slotIndex === i && !detailCard?.isLegend}
-                onClick={() => isOwn && setDetailCard({ card: slot.card, slot, slotIndex: i, isLegend: false })}
-                onDragStart={isOwn ? e => onBFDragStart(e, i) : undefined}
+                isSelected={detailCard?.slotIndex === i && detailCard?.side === side && !detailCard?.isLegend}
+                onClick={() => isOwn && setDetailCard({ card: slot.card, slot, slotIndex: i, side, isLegend: false })}
+                onDragStart={isOwn ? e => onBFDragStart(e, i, side) : undefined}
                 onDragEnd={() => setDragSrc(null)}
                 onMouseEnter={e => enterZoom(slot.card, slot, e)}
                 onMouseLeave={leaveZoom}
               />
             )}
-            {!slot && isOwn && selectedHand && (
+            {!slot && isOwn && handSelected && (
               <div className="h-full flex items-center justify-center text-amber-700/50 text-[10px]">Drop</div>
             )}
           </div>
@@ -749,6 +812,8 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
 
   if (!gs || !ps) return <div className="min-h-screen bg-neutral-950 flex items-center justify-center text-neutral-400">Loading…</div>;
 
+  const isBotTurn = isSolo && room.currentTurn === oppSlot;
+
   return (
     <div className="h-screen bg-neutral-950 text-neutral-100 flex overflow-hidden">
 
@@ -758,28 +823,52 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
         {/* OPPONENT top bar */}
         <div className={"flex items-center gap-3 px-3 py-1.5 border-b border-neutral-800/50 bg-neutral-950/70 shrink-0 " +
           (isEnded && oppWon ? "border-l-2 border-l-emerald-500" : isEnded && myWon ? "border-l-2 border-l-rose-600" : "")}>
-          <span className="text-xs font-semibold text-neutral-400 truncate max-w-[80px]">{opp?.name || "Opponent"}</span>
+          <span className={"text-xs font-semibold truncate max-w-[100px] " + (isSolo ? "text-amber-700/80" : "text-neutral-400")}>{opp?.name || "Opponent"}{isSolo ? " (bot)" : ""}</span>
           <ResourceRow health={ops.health} provisions={ops.provisions} mana={ops.mana}
-            isOwn={false} onH={() => {}} onP={() => {}} onM={() => {}} />
-          <span className="text-[10px] text-neutral-700 ml-auto">✋{ops.hand.length} 🂠{ops.deck.length}</span>
+            isOwn={isSolo}
+            onH={d => dispatchBot({ action:"update_resource", resource:"health", delta:d })}
+            onP={d => dispatchBot({ action:"update_resource", resource:"provisions", delta:d })}
+            onM={d => dispatchBot({ action:"update_resource", resource:"mana", delta:d })}
+          />
+          {!isSolo && <span className="text-[10px] text-neutral-700 ml-auto">✋{ops.hand.length} 🂠{ops.deck.length}</span>}
+          {isSolo && (
+            <div className="ml-auto flex gap-1">
+              <button onClick={() => dispatchBot({ action: "draw" })} className="px-2 py-0.5 rounded text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-400 transition">Draw</button>
+              <button onClick={() => dispatchBot({ action: "shuffle" })} className="px-2 py-0.5 rounded text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-400 transition">Shuffle</button>
+            </div>
+          )}
         </div>
 
         {/* OPPONENT board */}
         <div className="flex items-end gap-2 px-3 py-1.5 border-b border-neutral-800/30 shrink-0 bg-neutral-900/20">
-          <LegendZoneCard slot={ops.legendZone} isOwn={false} />
-          <ZonePile label="Deck" count={ops.deck.length} cards={[]} isOwn={false} zone="deck" />
-          <ZonePile label="GY" count={ops.graveyard.length} cards={ops.graveyard} isOwn={false} zone="graveyard" />
-          <ZonePile label="Exile" count={ops.exile.length} cards={ops.exile} isOwn={false} zone="exile" />
+          <LegendZoneCard slot={ops.legendZone} isOwn={isSolo}
+            onClickOverride={isSolo ? () => setDetailCard({ card: ops.legendZone?.card, slot: ops.legendZone, slotIndex: -1, side: oppSlot, isLegend: true }) : undefined} />
+          <ZonePile label="Deck" count={ops.deck.length} cards={[]} isOwn={isSolo} zone="deck" />
+          <ZonePile label="GY" count={ops.graveyard.length} cards={ops.graveyard} isOwn={isSolo} zone="graveyard"
+            onDragOver={isSolo ? onGYDragOver : undefined} onDrop={isSolo ? e => onGYDrop(e, oppSlot) : undefined} />
+          <ZonePile label="Exile" count={ops.exile.length} cards={ops.exile} isOwn={isSolo} zone="exile"
+            onDragOver={isSolo ? onExDragOver : undefined} onDrop={isSolo ? e => onExDrop(e, oppSlot) : undefined} />
           <div className="flex-grow flex gap-1 justify-end flex-wrap overflow-hidden max-h-20 items-start content-start pt-1">
-            {ops.hand.map((_, i) => <CardBack key={i} className="w-9 h-14" />)}
+            {isSolo
+              ? ops.hand.map((card, i) => (
+                  <HandCard key={card.playId||i} card={card}
+                    isSelected={selectedHand?.side === oppSlot && selectedHand?.index === i}
+                    onClick={() => setSelectedHand(selectedHand?.side === oppSlot && selectedHand?.index === i ? null : { index: i, card, side: oppSlot })}
+                    onDragStart={e => onHandDragStart(e, i, oppSlot)}
+                    onMouseEnter={e => enterZoom(card, null, e)}
+                    onMouseLeave={leaveZoom}
+                  />
+                ))
+              : ops.hand.map((_, i) => <CardBack key={i} className="w-9 h-14" />)
+            }
           </div>
         </div>
-        {renderBF(ops.battlefield, false)}
+        {renderBF(ops.battlefield, oppSlot)}
 
         {/* CENTER bar */}
         <div className="flex items-center justify-center gap-4 py-1 bg-neutral-950 border-y border-neutral-800 shrink-0 text-xs">
-          <div className={"px-3 py-1 rounded-full font-semibold " + (isMyTurn && !isEnded ? "bg-amber-600/80 text-white" : "bg-neutral-800 text-neutral-500")}>
-            {isEnded ? (myWon ? "You Win!" : "You Lose.") : isMyTurn ? "Your Turn" : `${opp?.name||"Opponent"}'s Turn`}
+          <div className={"px-3 py-1 rounded-full font-semibold " + (!isEnded && (isMyTurn || isBotTurn) ? "bg-amber-600/80 text-white" : "bg-neutral-800 text-neutral-500")}>
+            {isEnded ? (myWon ? "You Win!" : "You Lose.") : isMyTurn ? "Your Turn" : isBotTurn ? "Bot's Turn" : `${opp?.name||"Opponent"}'s Turn`}
           </div>
           <span className="text-neutral-700">Turn {room.turnNumber||1}</span>
           {isMyTurn && !isEnded && (
@@ -788,10 +877,16 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
               Pass Turn
             </button>
           )}
+          {isBotTurn && !isEnded && (
+            <button onClick={() => dispatchBot({ action: "pass_turn" })}
+              className="px-3 py-1 rounded-full bg-amber-800/70 hover:bg-amber-700/70 text-amber-200 font-semibold transition">
+              Pass (Bot)
+            </button>
+          )}
         </div>
 
         {/* PLAYER battlefield */}
-        {renderBF(ps.battlefield, true)}
+        {renderBF(ps.battlefield, mySlot)}
 
         {/* PLAYER back row */}
         <div className="flex items-end gap-2 px-3 py-1.5 border-t border-neutral-800/30 shrink-0 bg-neutral-900/20">
@@ -799,9 +894,9 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
           <ZonePile label="Deck" count={ps.deck.length} cards={[]} isOwn={true} zone="deck"
             onDragOver={e => e.preventDefault()} onDrop={() => {}} />
           <ZonePile label="GY" count={ps.graveyard.length} cards={ps.graveyard} isOwn={true} zone="graveyard"
-            onDragOver={onGYDragOver} onDrop={onGYDrop} />
+            onDragOver={onGYDragOver} onDrop={e => onGYDrop(e, mySlot)} />
           <ZonePile label="Exile" count={ps.exile.length} cards={ps.exile} isOwn={true} zone="exile"
-            onDragOver={onExDragOver} onDrop={onExDrop} />
+            onDragOver={onExDragOver} onDrop={e => onExDrop(e, mySlot)} />
           <div className="flex gap-1.5 ml-auto flex-wrap justify-end items-center">
             <button onClick={() => dispatch({ action: "draw" })} className="px-2.5 py-1 rounded text-xs bg-neutral-800 hover:bg-neutral-700 transition text-neutral-300">Draw</button>
             <button onClick={() => dispatch({ action: "shuffle" })} className="px-2.5 py-1 rounded text-xs bg-neutral-800 hover:bg-neutral-700 transition text-neutral-300">Shuffle</button>
@@ -829,12 +924,16 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
               className="px-3 py-1.5 rounded text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition">Close Lobby</button>
             <button onClick={() => { localStorage.removeItem("pf_current_room"); localStorage.removeItem("pf_current_slot"); window.location.href = "/play"; }}
               className="px-3 py-1.5 rounded text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition">New Game</button>
-            <button onClick={() => dispatch({ action: "request_rematch" })} disabled={room.players[mySlot]?.rematchReady}
-              className="px-3 py-1.5 rounded text-xs bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white font-medium transition">
-              {room.players[mySlot]?.rematchReady ? "Waiting for opponent…" : "Rematch"}
-            </button>
-            {room.players[oppSlot]?.rematchReady && !room.players[mySlot]?.rematchReady && (
-              <span className="text-xs text-amber-400 ml-1">Opponent wants a rematch!</span>
+            {!isSolo && (
+              <>
+                <button onClick={() => dispatch({ action: "request_rematch" })} disabled={room.players[mySlot]?.rematchReady}
+                  className="px-3 py-1.5 rounded text-xs bg-amber-700 hover:bg-amber-600 disabled:opacity-50 text-white font-medium transition">
+                  {room.players[mySlot]?.rematchReady ? "Waiting for opponent…" : "Rematch"}
+                </button>
+                {room.players[oppSlot]?.rematchReady && !room.players[mySlot]?.rematchReady && (
+                  <span className="text-xs text-amber-400 ml-1">Opponent wants a rematch!</span>
+                )}
+              </>
             )}
           </div>
         )}
@@ -845,9 +944,9 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
             {ps.hand.length === 0 && <p className="text-neutral-700 text-xs self-center">No cards in hand</p>}
             {ps.hand.map((card, i) => (
               <HandCard key={card.playId||i} card={card}
-                isSelected={selectedHand?.index === i}
-                onClick={() => setSelectedHand(selectedHand?.index === i ? null : { index: i, card })}
-                onDragStart={e => onHandDragStart(e, i)}
+                isSelected={selectedHand?.side === mySlot && selectedHand?.index === i}
+                onClick={() => setSelectedHand(selectedHand?.side === mySlot && selectedHand?.index === i ? null : { index: i, card, side: mySlot })}
+                onDragStart={e => onHandDragStart(e, i, mySlot)}
                 onMouseEnter={e => enterZoom(card, null, e)}
                 onMouseLeave={leaveZoom}
               />
@@ -857,10 +956,10 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
             <div className="flex gap-2 mt-1 text-xs text-neutral-500 items-center">
               <span className="text-amber-400">▸ Click slot or drag to play</span>
               {selectedHand.card.type === "Event" && (
-                <button onClick={() => { dispatch({ action:"exile_from_hand", handIndex:selectedHand.index }); setSelectedHand(null); }}
+                <button onClick={() => { dispatchFor(selectedHand.side, { action:"exile_from_hand", handIndex:selectedHand.index }); setSelectedHand(null); }}
                   className="text-emerald-400 hover:text-emerald-300">Play Event (→ Exile)</button>
               )}
-              <button onClick={() => { dispatch({ action:"hand_to_graveyard", handIndex:selectedHand.index }); setSelectedHand(null); }}
+              <button onClick={() => { dispatchFor(selectedHand.side, { action:"hand_to_graveyard", handIndex:selectedHand.index }); setSelectedHand(null); }}
                 className="ml-auto text-neutral-600 hover:text-neutral-400">Discard</button>
               <button onClick={() => setSelectedHand(null)} className="text-neutral-700 hover:text-neutral-500">Cancel</button>
             </div>
@@ -901,13 +1000,13 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
         <CardDetailModal
           card={detailCard.card} slot={detailCard.slot} isOwn={true}
           onClose={() => setDetailCard(null)}
-          onExhaust={async () => { if (!detailCard.isLegend) await dispatch({ action:"exhaust", slotIndex:detailCard.slotIndex }); setDetailCard(null); }}
-          onDamage={d => dispatch({ action: detailCard.isLegend?"modify_legend_counter":"modify_counter", slotIndex:detailCard.slotIndex, counterType:"damage", delta:d })}
-          onAtkBonus={d => dispatch({ action: detailCard.isLegend?"modify_legend_counter":"modify_counter", slotIndex:detailCard.slotIndex, counterType:"atk", delta:d })}
-          onHpBonus={d => dispatch({ action: detailCard.isLegend?"modify_legend_counter":"modify_counter", slotIndex:detailCard.slotIndex, counterType:"hp", delta:d })}
-          onToggleMarker={m => dispatch({ action:"toggle_marker", slotIndex:detailCard.slotIndex, marker:m })}
-          onSendToGraveyard={async () => { await dispatch({ action:"send_to_graveyard", slotIndex:detailCard.slotIndex }); setDetailCard(null); }}
-          onSendToExile={async () => { await dispatch({ action:"send_to_exile", slotIndex:detailCard.slotIndex }); setDetailCard(null); }}
+          onExhaust={async () => { if (!detailCard.isLegend) await dispatchFor(detailCard.side, { action:"exhaust", slotIndex:detailCard.slotIndex }); setDetailCard(null); }}
+          onDamage={d => dispatchFor(detailCard.side, { action: detailCard.isLegend?"modify_legend_counter":"modify_counter", slotIndex:detailCard.slotIndex, counterType:"damage", delta:d })}
+          onAtkBonus={d => dispatchFor(detailCard.side, { action: detailCard.isLegend?"modify_legend_counter":"modify_counter", slotIndex:detailCard.slotIndex, counterType:"atk", delta:d })}
+          onHpBonus={d => dispatchFor(detailCard.side, { action: detailCard.isLegend?"modify_legend_counter":"modify_counter", slotIndex:detailCard.slotIndex, counterType:"hp", delta:d })}
+          onToggleMarker={m => dispatchFor(detailCard.side, { action:"toggle_marker", slotIndex:detailCard.slotIndex, marker:m })}
+          onSendToGraveyard={async () => { await dispatchFor(detailCard.side, { action:"send_to_graveyard", slotIndex:detailCard.slotIndex }); setDetailCard(null); }}
+          onSendToExile={async () => { await dispatchFor(detailCard.side, { action:"send_to_exile", slotIndex:detailCard.slotIndex }); setDetailCard(null); }}
           onChangePosition={pos => setDetailCard(prev => prev ? { ...prev, slot: { ...prev.slot, position: pos } } : null)}
         />
       )}
