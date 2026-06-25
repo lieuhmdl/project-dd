@@ -69,6 +69,7 @@ function makePlayerState(processedDeck) {
     hasMulliganed: false,
     mulliganDone: false,
     hasTakenFirstTurn: false,
+    tokenBF: [],
   };
 }
 
@@ -256,6 +257,7 @@ function handlePassTurn(room, { playerId }) {
   ps.hasTakenFirstTurn = true;
   // Unexhaust all units on this player's side
   ps.battlefield = ps.battlefield.map(s => s ? { ...s, exhausted: false } : null);
+  ps.tokenBF = (ps.tokenBF || []).map(s => s ? { ...s, exhausted: false } : null);
 
   const next = opponent(slot);
   const nextPs = room.gs[next];
@@ -326,17 +328,17 @@ function handleModifyLegendCounter(room, { playerId, counterType, delta }) {
   return { ok: true };
 }
 
-function handleAddToken(room, { playerId, slotIndex, tokenName, position }) {
+function handleAddToken(room, { playerId, tokenName, position }) {
   const slot = playerSlot(room, playerId);
   if (!slot || !room.gs) return { error: "Invalid" };
-  if (room.gs[slot].battlefield[slotIndex] !== null) return { error: "Slot occupied" };
   const token = {
     id: "token-" + uid(), playId: uid(), type: "Unit",
     name: tokenName || "Token", race: "Token", klass: "",
     attack: 1, health: 1, provisions: 0, mana: 0,
     rarity: "Common", keywords: [], tribes: [], abilities: [],
   };
-  room.gs[slot].battlefield[slotIndex] = { card: token, position: position || "Frontline", exhausted: false, damage: 0, atkBonus: 0, hpBonus: 0, markers: [] };
+  if (!room.gs[slot].tokenBF) room.gs[slot].tokenBF = [];
+  room.gs[slot].tokenBF.push({ card: token, position: position || "Frontline", exhausted: false, damage: 0, atkBonus: 0, hpBonus: 0, markers: [], badge: null });
   addLog(room, `${room.players[slot].name} created token: ${token.name}.`, "action");
   return { ok: true };
 }
@@ -406,6 +408,63 @@ function handleConcede(room, { playerId }) {
   return { ok: true };
 }
 
+function handleSetBadge(room, { playerId, slotIndex, badge }) {
+  const slot = playerSlot(room, playerId);
+  if (!slot || !room.gs) return { error: "Invalid" };
+  const bf = room.gs[slot].battlefield;
+  if (bf[slotIndex]) bf[slotIndex].badge = badge || null;
+  if (badge) addLog(room, `${room.players[slot].name} declares: ${badge} (slot ${slotIndex+1}).`, "action");
+  return { ok: true };
+}
+
+function handleClearBadges(room, { playerId }) {
+  if (!room.gs) return { error: "Invalid" };
+  for (const s of ["p1","p2"]) {
+    (room.gs[s]?.battlefield || []).forEach(slot => { if (slot) slot.badge = null; });
+    (room.gs[s]?.tokenBF || []).forEach(slot => { if (slot) slot.badge = null; });
+  }
+  return { ok: true };
+}
+
+function handleAttachEquipment(room, { playerId, handIndex, targetSlotIndex }) {
+  const slot = playerSlot(room, playerId);
+  if (!slot || !room.gs) return { error: "Invalid" };
+  const ps = room.gs[slot];
+  const card = ps.hand[handIndex];
+  if (!card) return { error: "No card at handIndex" };
+  const target = ps.battlefield[targetSlotIndex];
+  if (!target) return { error: "No unit at target slot" };
+  ps.hand.splice(handIndex, 1);
+  if (!target.attached) target.attached = [];
+  target.attached.push({ ...card, playId: uid() });
+  addLog(room, `${room.players[slot].name} attached ${card.name} to ${target.card.name}.`, "action");
+  return { ok: true };
+}
+
+function handleDetachEquipment(room, { playerId, slotIndex, attachIndex }) {
+  const slot = playerSlot(room, playerId);
+  if (!slot || !room.gs) return { error: "Invalid" };
+  const ps = room.gs[slot];
+  const target = ps.battlefield[slotIndex];
+  if (!target?.attached?.[attachIndex]) return { error: "No attachment" };
+  const card = target.attached[attachIndex];
+  target.attached.splice(attachIndex, 1);
+  ps.graveyard.push(card);
+  addLog(room, `${room.players[slot].name} detached ${card.name} → GY.`, "action");
+  return { ok: true };
+}
+
+function handleRemoveToken(room, { playerId, tokenIndex }) {
+  const slot = playerSlot(room, playerId);
+  if (!slot || !room.gs) return { error: "Invalid" };
+  const ps = room.gs[slot];
+  if (!ps.tokenBF?.[tokenIndex]) return { error: "No token" };
+  const name = ps.tokenBF[tokenIndex].card?.name;
+  ps.tokenBF.splice(tokenIndex, 1);
+  addLog(room, `${room.players[slot].name} removed token: ${name}.`, "action");
+  return { ok: true };
+}
+
 function handleHandToGraveyard(room, { playerId, handIndex }) {
   const slot = playerSlot(room, playerId);
   if (!slot || !room.gs) return { error: "Invalid" };
@@ -439,6 +498,11 @@ const ACTION_MAP = {
   modify_legend_counter: handleModifyLegendCounter,
   toggle_marker:       handleToggleMarker,
   add_token:           handleAddToken,
+  set_badge:           handleSetBadge,
+  clear_badges:        handleClearBadges,
+  attach_equipment:    handleAttachEquipment,
+  detach_equipment:    handleDetachEquipment,
+  remove_token:        handleRemoveToken,
   concede:             handleConcede,
   start_solo:          handleStartSolo,
   chat:                handleChat,

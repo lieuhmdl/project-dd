@@ -94,6 +94,7 @@ function CardZoom({ card, bfSlot, pos, scale }) {
             <div className="flex-1 py-1.5 text-emerald-300 font-bold text-sm border-l border-neutral-700/60">HP {curHp}</div>
           </div>
         )}
+        {card.strike && <p className="text-[10px] text-neutral-300 px-3 pt-2"><span className="text-amber-400 font-semibold">Strike: </span>{card.strike}</p>}
         {card.text && <p className="text-[10px] text-neutral-300 px-3 pt-2">{card.text}</p>}
         {card.passive && <p className="text-[10px] text-neutral-300 px-3 pt-1.5"><span className="text-amber-400 font-semibold">Passive: </span>{card.passive}</p>}
         {(card.abilities||[]).filter(Boolean).length > 0 && (
@@ -126,7 +127,7 @@ function CardBack({ className = "" }) {
   );
 }
 
-function BFCard({ slot, isOwn, isSelected, onClick, onDragStart, onDragEnd, onMouseEnter, onMouseLeave }) {
+function BFCard({ slot, isOwn, isSelected, onClick, onDragStart, onDragEnd, onMouseEnter, onMouseLeave, enterZoom, leaveZoom }) {
   if (!slot) return null;
   const { card, position, exhausted, damage, atkBonus, hpBonus, markers } = slot;
   const isUnit = UNIT_LIKE.includes(card.type);
@@ -143,15 +144,40 @@ function BFCard({ slot, isOwn, isSelected, onClick, onDragStart, onDragEnd, onMo
       onClick={onClick} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}
     >
       <div className="absolute top-0 left-0 right-0 h-1" style={{ background: typeColor }} />
+      {slot.badge && (
+        <div className="absolute -top-5 left-0 right-0 flex justify-center z-10 pointer-events-none">
+          <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-full bg-neutral-950 border border-amber-500/60 text-amber-300 whitespace-nowrap shadow-lg">
+            {slot.badge}
+          </span>
+        </div>
+      )}
       <div className="absolute top-1.5 right-1 text-[7px] font-bold text-neutral-600">{position === "Frontline" ? "FL" : "BL"}</div>
       {exhausted && <div className="absolute top-1.5 left-1 text-[8px] text-yellow-500 font-bold">⟳</div>}
       <div className="p-1 pt-2.5">
         <p className="text-[10px] font-semibold text-amber-200 leading-tight line-clamp-2">{card.name||"(token)"}</p>
         <p className="text-[8px] text-neutral-500 truncate">{card.race||card.klass||card.type}</p>
+        {card.keywords?.length > 0 && (
+          <p className="text-[7px] text-amber-500/80 truncate mt-0.5">{card.keywords.slice(0,3).join(" · ")}</p>
+        )}
       </div>
       {markers?.length > 0 && (
         <div className="flex flex-wrap gap-0.5 px-1">
           {markers.slice(0,6).map(m => <div key={m} className="w-2 h-2 rounded-full" style={{ background: MARKER_COLORS[m]||"#888" }} title={m} />)}
+        </div>
+      )}
+      {slot.attached?.length > 0 && (
+        <div className="flex flex-col gap-0.5 px-1 pb-1">
+          {slot.attached.map((eq, i) => (
+            <div key={eq.playId||i}
+              className="flex items-center gap-1 rounded bg-amber-950/40 border border-amber-800/40 px-1 py-0.5 cursor-pointer"
+              onClick={e => { e.stopPropagation(); }}
+              onMouseEnter={enterZoom ? e => enterZoom(eq, null, e) : undefined}
+              onMouseLeave={leaveZoom}
+            >
+              <div className="w-1.5 h-1.5 rounded-full shrink-0 bg-amber-600" />
+              <span className="text-[7px] text-amber-300/80 truncate">{eq.name}</span>
+            </div>
+          ))}
         </div>
       )}
       {damage > 0 && (
@@ -199,7 +225,7 @@ function HandCard({ card, isSelected, onClick, onDragStart, onMouseEnter, onMous
 }
 
 // ---- Card detail modal (full controls) --------------------------------------
-function CardDetailModal({ card, slot, isOwn, onClose, onExhaust, onDamage, onAtkBonus, onHpBonus, onToggleMarker, onSendToGraveyard, onSendToExile, onChangePosition }) {
+function CardDetailModal({ card, slot, isOwn, isMyTurn, onDeclareAttack, onClose, onExhaust, onDamage, onAtkBonus, onHpBonus, onToggleMarker, onSendToGraveyard, onSendToExile, onChangePosition }) {
   if (!card) return null;
   const isUnit = UNIT_LIKE.includes(card.type);
   const curAtk = slot ? (parseInt(card.attack)||0) + (slot.atkBonus||0) : (parseInt(card.attack)||0);
@@ -238,6 +264,37 @@ function CardDetailModal({ card, slot, isOwn, onClose, onExhaust, onDamage, onAt
         )}
         {slot && isOwn && (
           <div className="border-t border-neutral-700 pt-3 flex flex-col gap-2">
+            {isOwn && (
+              <div className="border-b border-neutral-700 pb-3 mb-1">
+                <p className="text-[10px] uppercase tracking-widest text-amber-500/80 mb-2 font-semibold">Declare Action</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {isMyTurn && (
+                    <button onClick={() => onDeclareAttack("⚔ Strike")}
+                      className="px-3 py-1.5 rounded text-xs bg-rose-900/60 hover:bg-rose-800/70 text-rose-200 font-medium transition border border-rose-700/40">
+                      ⚔ Strike
+                    </button>
+                  )}
+                  {isMyTurn && (card.abilities || []).filter(a => a?.text).map((ab, i) => (
+                    <button key={i} onClick={() => onDeclareAttack(`✦ ${ab.text.slice(0,30)}${ab.text.length>30?"…":""}`)}
+                      className="px-3 py-1.5 rounded text-xs bg-amber-900/40 hover:bg-amber-800/50 text-amber-200 font-medium transition border border-amber-700/40">
+                      ✦ {ab.text.slice(0, 20)}{ab.text.length > 20 ? "…" : ""}
+                    </button>
+                  ))}
+                  {isMyTurn && (card.type === "Ancient Legend" || card.type === "Unit") && slot?.badge && (
+                    <button onClick={() => onDeclareAttack(null)}
+                      className="px-2 py-1.5 rounded text-xs bg-neutral-800 hover:bg-neutral-700 text-neutral-400 transition">
+                      Clear
+                    </button>
+                  )}
+                </div>
+                {!isMyTurn && (
+                  <button onClick={() => onDeclareAttack("🛡 Defending")}
+                    className="mt-1 px-3 py-1.5 rounded text-xs bg-violet-900/50 hover:bg-violet-800/60 text-violet-200 font-medium transition border border-violet-700/40 w-full">
+                    🛡 Declare Defender
+                  </button>
+                )}
+              </div>
+            )}
             <p className="text-[10px] uppercase tracking-widest text-neutral-500 font-semibold">Controls</p>
             <div className="flex gap-2">
               {["Frontline","Backline"].map(pos => (
@@ -593,25 +650,46 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
   const [selectedHand, setSelectedHand] = useState(null);
   const [detailCard, setDetailCard] = useState(null);
   const [pile, setPile] = useState(null);
-  const [tokenSlot, setTokenSlot] = useState(null);
+  const [tokenModalOpen, setTokenModalOpen] = useState(false);
   const [tokenName, setTokenName] = useState("Token");
   const [dragSrc, setDragSrc] = useState(null);
   const [chatInput, setChatInput] = useState("");
 
-  // Alt-zoom state
-  const altHeldRef = useRef(false);
+  const ghostImgRef = useRef(null);
+  const [dragGhost, setDragGhost] = useState(null); // { card } | null
+  const [ghostPos, setGhostPos]   = useState({ x: 0, y: 0 });
+
+  // Card zoom overlay state
+  // - Hover any card for 1 second → shows info at default scale
+  // - Hold Alt or Ctrl while hovering → shows instantly, scroll up/down to scale
+  const modKeyRef  = useRef(false); // Alt or Ctrl held
   const zoomInfoRef = useRef(null);
-  const [altHeld, setAltHeld] = useState(false);
+  const zoomTimerRef = useRef(null);
+  const zoomMouseRef = useRef({ x: 0, y: 0 });
   const [zoomInfo, setZoomInfo] = useState(null);
-  const [zoomPos, setZoomPos] = useState({ x: 0, y: 0 });
+  const [zoomPos, setZoomPos]   = useState({ x: 0, y: 0 });
   const [zoomScale, setZoomScale] = useState(1);
 
   useEffect(() => {
-    const onKeyDown = e => { if (e.key === "Alt") { e.preventDefault(); altHeldRef.current = true; setAltHeld(true); } };
-    const onKeyUp   = e => { if (e.key === "Alt") { altHeldRef.current = false; zoomInfoRef.current = null; setAltHeld(false); setZoomInfo(null); } };
-    const onMove    = e => { if (altHeldRef.current && zoomInfoRef.current) setZoomPos({ x: e.clientX, y: e.clientY }); };
-    const onWheel   = e => {
-      if (!altHeldRef.current || !zoomInfoRef.current) return;
+    const isModKey = e => e.key === "Alt" || e.key === "Control";
+    const onKeyDown = e => {
+      if (isModKey(e)) { e.preventDefault(); modKeyRef.current = true; }
+    };
+    const onKeyUp = e => {
+      if (isModKey(e)) {
+        modKeyRef.current = false;
+        // If nothing is being hovered (timer-based), close; otherwise keep
+        if (!zoomTimerRef.current && zoomInfoRef.current) {
+          // A timer-based show is still alive — leave it open
+        }
+      }
+    };
+    const onMove = e => {
+      zoomMouseRef.current = { x: e.clientX, y: e.clientY };
+      if (zoomInfoRef.current) setZoomPos({ x: e.clientX, y: e.clientY });
+    };
+    const onWheel = e => {
+      if (!zoomInfoRef.current) return;
       e.preventDefault();
       setZoomScale(prev => Math.max(0.4, Math.min(3, prev + (e.deltaY < 0 ? 0.1 : -0.1))));
     };
@@ -627,14 +705,43 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
     };
   }, []);
 
+  useEffect(() => {
+    const img = new Image();
+    img.src = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+    ghostImgRef.current = img;
+  }, []);
+
+  useEffect(() => {
+    const onOver = e => { if (dragSrc) setGhostPos({ x: e.clientX, y: e.clientY }); };
+    document.addEventListener("dragover", onOver);
+    return () => document.removeEventListener("dragover", onOver);
+  }, [dragSrc]);
+
   function enterZoom(card, bfSlot, e) {
-    if (!altHeldRef.current) return;
+    clearTimeout(zoomTimerRef.current);
     const info = { card, bfSlot };
-    zoomInfoRef.current = info;
-    setZoomInfo(info);
-    if (e) setZoomPos({ x: e.clientX, y: e.clientY });
+    const pos  = e ? { x: e.clientX, y: e.clientY } : zoomMouseRef.current;
+    if (modKeyRef.current) {
+      // Instant show when modifier key held
+      zoomInfoRef.current = info;
+      setZoomInfo(info);
+      setZoomPos(pos);
+    } else {
+      // 1-second delay otherwise
+      zoomTimerRef.current = setTimeout(() => {
+        zoomTimerRef.current = null;
+        zoomInfoRef.current = info;
+        setZoomInfo(info);
+        setZoomPos(zoomMouseRef.current);
+      }, 1000);
+    }
   }
-  function leaveZoom() { zoomInfoRef.current = null; setZoomInfo(null); }
+  function leaveZoom() {
+    clearTimeout(zoomTimerRef.current);
+    zoomTimerRef.current = null;
+    zoomInfoRef.current = null;
+    setZoomInfo(null);
+  }
 
   const gs      = room.gs;
   const ps      = gs?.[mySlot];
@@ -673,38 +780,69 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
 
   // ---- drag & drop ----------------------------------------------------------
   // dragSrc carries { type, index, side } so we know which player's zone it came from
-  const onBFDragStart = (e, i, side) => { setDragSrc({ type: "bf", index: i, side: side || mySlot }); e.dataTransfer.effectAllowed = "move"; };
-  const onHandDragStart = (e, i, side) => { setDragSrc({ type: "hand", index: i, side: side || mySlot }); e.dataTransfer.effectAllowed = "move"; };
+  const onBFDragStart = (e, i, side) => {
+    const slot = bfForSide(side || mySlot)?.[i];
+    if (ghostImgRef.current) e.dataTransfer.setDragImage(ghostImgRef.current, 0, 0);
+    setDragSrc({ type: "bf", index: i, side: side || mySlot });
+    setDragGhost({ card: slot?.card });
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const onHandDragStart = (e, i, side) => {
+    const hand = (side || mySlot) === mySlot ? ps?.hand : ops?.hand;
+    if (ghostImgRef.current) e.dataTransfer.setDragImage(ghostImgRef.current, 0, 0);
+    setDragSrc({ type: "hand", index: i, side: side || mySlot });
+    setDragGhost({ card: hand?.[i] });
+    e.dataTransfer.effectAllowed = "move";
+  };
 
   function bfForSide(side) { return side === mySlot ? ps?.battlefield : ops?.battlefield; }
 
   const onBFDragOver = (e, i, side) => {
     if (!dragSrc) return;
-    if (bfForSide(side)?.[i]) return;
-    e.preventDefault();
+    const bf = bfForSide(side);
+    // Allow dragover if slot empty, or if dragging an Artifact from hand (for attachment)
+    if (!bf?.[i]) { e.preventDefault(); return; }
+    if (dragSrc.type === "hand") {
+      const hand = dragSrc.side === mySlot ? ps?.hand : ops?.hand;
+      if (hand?.[dragSrc.index]?.type === "Artifact") e.preventDefault();
+    }
   };
   const onGYDragOver  = e => { if (dragSrc?.type === "bf") e.preventDefault(); };
   const onExDragOver  = e => { if (dragSrc) e.preventDefault(); };
+
+  function onDragEnd() { setDragSrc(null); setDragGhost(null); }
 
   async function onBFDrop(e, slotIndex, side) {
     e.preventDefault();
     if (!dragSrc) return;
     const act = body => dispatchFor(side, body);
+    // If dragging an Artifact from hand onto an occupied slot → attach
     if (dragSrc.type === "hand" && dragSrc.side === side) {
       const hand = side === mySlot ? ps.hand : ops.hand;
       const card = hand[dragSrc.index];
+      const bfSlot = bfForSide(side)?.[slotIndex];
+      if (bfSlot && card?.type === "Artifact") {
+        await dispatchFor(side, { action: "attach_equipment", handIndex: dragSrc.index, targetSlotIndex: slotIndex });
+        setSelectedHand(null);
+        setDragSrc(null);
+        setDragGhost(null);
+        e.preventDefault();
+        return;
+      }
       await act({ action: "play_card", handIndex: dragSrc.index, slotIndex, position: card?.position || "Frontline" });
       setSelectedHand(null);
     } else if (dragSrc.type === "bf" && dragSrc.side === side && dragSrc.index !== slotIndex) {
       await act({ action: "move_card", fromSlot: dragSrc.index, toSlot: slotIndex });
     }
     setDragSrc(null);
+    setDragGhost(null);
   }
   async function onGYDrop(e, side) {
     e.preventDefault();
     if (dragSrc?.type === "bf" && dragSrc.side === side)
       await dispatchFor(side, { action: "send_to_graveyard", slotIndex: dragSrc.index });
     setDragSrc(null);
+    setDragGhost(null);
   }
   async function onExDrop(e, side) {
     e.preventDefault();
@@ -715,6 +853,7 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
       setSelectedHand(null);
     }
     setDragSrc(null);
+    setDragGhost(null);
   }
 
   async function onSlotClick(slotIndex, side) {
@@ -786,7 +925,7 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
         {slots.map((slot, i) => (
           <div key={i}
             className={"rounded-lg transition h-28 flex-1 border-2 border-dashed " +
-              (!slot ? (isOwn && handSelected ? "border-amber-600/50 hover:border-amber-400/70 cursor-pointer" : "border-neutral-800/30") : "border-transparent")}
+              (!slot ? (isOwn && (handSelected || dragSrc?.type === "hand") ? "border-amber-600/50 hover:border-amber-400/70 cursor-pointer" : "border-neutral-800/30") : "border-transparent")}
             onDragOver={isOwn ? e => onBFDragOver(e, i, side) : undefined}
             onDrop={isOwn ? e => onBFDrop(e, i, side) : undefined}
             onClick={isOwn && !slot ? () => onSlotClick(i, side) : undefined}
@@ -796,16 +935,55 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
                 isSelected={detailCard?.slotIndex === i && detailCard?.side === side && !detailCard?.isLegend}
                 onClick={() => isOwn && setDetailCard({ card: slot.card, slot, slotIndex: i, side, isLegend: false })}
                 onDragStart={isOwn ? e => onBFDragStart(e, i, side) : undefined}
-                onDragEnd={() => setDragSrc(null)}
+                onDragEnd={onDragEnd}
                 onMouseEnter={e => enterZoom(slot.card, slot, e)}
                 onMouseLeave={leaveZoom}
+                enterZoom={enterZoom}
+                leaveZoom={leaveZoom}
               />
             )}
-            {!slot && isOwn && handSelected && (
-              <div className="h-full flex items-center justify-center text-amber-700/50 text-[10px]">Drop</div>
+            {isOwn && (handSelected || (dragSrc?.side === side && dragSrc?.type === "hand")) && (
+              <div className="h-full flex items-center justify-center text-[10px]">
+                {slot && dragSrc?.type === "hand" ? <span className="text-amber-700/50">Equip</span> : !slot && handSelected ? <span className="text-amber-700/50">Drop</span> : null}
+              </div>
             )}
           </div>
         ))}
+      </div>
+    );
+  }
+
+  function renderTokenRow(tokenBF, side) {
+    if (!tokenBF) return null;
+    const isOwn = side === mySlot || isSolo;
+    return (
+      <div className="flex gap-1.5 px-2 pb-1 min-h-[4px]">
+        {tokenBF.map((slot, i) => (
+          <div key={slot.card.playId || i} className="relative w-16 h-16 rounded border border-amber-900/40 bg-neutral-900/60 flex flex-col overflow-hidden cursor-pointer group"
+            onClick={isOwn ? () => setDetailCard({ card: slot.card, slot, slotIndex: i, side, isLegend: false, isToken: true }) : undefined}
+            onMouseEnter={e => enterZoom(slot.card, slot, e)} onMouseLeave={leaveZoom}
+          >
+            <div className="h-0.5 w-full bg-amber-800/60" />
+            {slot.badge && (
+              <div className="absolute -top-4 left-0 right-0 flex justify-center z-10 pointer-events-none">
+                <span className="text-[7px] font-bold px-1 py-0.5 rounded-full bg-neutral-950 border border-amber-500/50 text-amber-300 shadow">{slot.badge}</span>
+              </div>
+            )}
+            <p className="text-[7px] font-semibold text-amber-300/80 px-1 pt-0.5 truncate leading-tight">{slot.card.name}</p>
+            <div className="flex text-[7px] font-bold text-center mt-auto border-t border-neutral-700/50">
+              <div className="flex-1 py-0.5 text-rose-300">{(parseInt(slot.card.attack)||0)+(slot.atkBonus||0)}</div>
+              <div className="flex-1 py-0.5 text-emerald-300 border-l border-neutral-700/50">{Math.max(0,(parseInt(slot.card.health)||0)+(slot.hpBonus||0)-(slot.damage||0))}</div>
+            </div>
+            {isOwn && (
+              <button className="absolute top-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-neutral-700 hover:bg-rose-700 text-white text-[8px] flex items-center justify-center opacity-0 group-hover:opacity-100 transition z-20"
+                onClick={e => { e.stopPropagation(); dispatchFor(side, { action: "remove_token", tokenIndex: i }); }}>×</button>
+            )}
+            {slot.damage > 0 && <div className="absolute top-1 right-0.5 w-3 h-3 rounded-full bg-red-700 text-white text-[7px] flex items-center justify-center font-bold">{slot.damage}</div>}
+          </div>
+        ))}
+        {isOwn && tokenBF.length === 0 && (
+          <div className="text-[8px] text-neutral-800 self-center pl-1">Token area</div>
+        )}
       </div>
     );
   }
@@ -864,6 +1042,7 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
           </div>
         </div>
         {renderBF(ops.battlefield, oppSlot)}
+        {renderTokenRow(ops.tokenBF || [], oppSlot)}
 
         {/* CENTER bar */}
         <div className="flex items-center justify-center gap-4 py-1 bg-neutral-950 border-y border-neutral-800 shrink-0 text-xs">
@@ -883,10 +1062,14 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
               Pass (Bot)
             </button>
           )}
+          {(() => { const anyBadges = [...(ps.battlefield||[]), ...(ops.battlefield||[])].some(s => s?.badge); return anyBadges && !isEnded ? (
+            <button onClick={() => dispatch({ action: "clear_badges" })} className="px-2 py-1 rounded text-[10px] bg-neutral-800 hover:bg-neutral-700 text-neutral-400 transition">Clear Badges</button>
+          ) : null; })()}
         </div>
 
         {/* PLAYER battlefield */}
         {renderBF(ps.battlefield, mySlot)}
+        {renderTokenRow(ps.tokenBF || [], mySlot)}
 
         {/* PLAYER back row */}
         <div className="flex items-end gap-2 px-3 py-1.5 border-t border-neutral-800/30 shrink-0 bg-neutral-900/20">
@@ -900,7 +1083,7 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
           <div className="flex gap-1.5 ml-auto flex-wrap justify-end items-center">
             <button onClick={() => dispatch({ action: "draw" })} className="px-2.5 py-1 rounded text-xs bg-neutral-800 hover:bg-neutral-700 transition text-neutral-300">Draw</button>
             <button onClick={() => dispatch({ action: "shuffle" })} className="px-2.5 py-1 rounded text-xs bg-neutral-800 hover:bg-neutral-700 transition text-neutral-300">Shuffle</button>
-            <button onClick={() => { const s = ps.battlefield.findIndex(x => x===null); if (s >= 0) setTokenSlot(s); }}
+            <button onClick={() => setTokenModalOpen(true)}
               className="px-2.5 py-1 rounded text-xs bg-neutral-800 hover:bg-neutral-700 transition text-neutral-300">+ Token</button>
             {!isEnded && <button onClick={() => dispatch({ action: "concede" })} className="px-2.5 py-1 rounded text-xs bg-rose-900/60 hover:bg-rose-800/60 transition text-rose-300">Concede</button>}
           </div>
@@ -999,6 +1182,15 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
       {detailCard && (
         <CardDetailModal
           card={detailCard.card} slot={detailCard.slot} isOwn={true}
+          isMyTurn={isMyTurn}
+          onDeclareAttack={async text => {
+            if (text) {
+              await dispatchFor(detailCard.side, { action: "set_badge", slotIndex: detailCard.slotIndex, badge: text });
+            } else {
+              await dispatchFor(detailCard.side, { action: "set_badge", slotIndex: detailCard.slotIndex, badge: null });
+            }
+            setDetailCard(null);
+          }}
           onClose={() => setDetailCard(null)}
           onExhaust={async () => { if (!detailCard.isLegend) await dispatchFor(detailCard.side, { action:"exhaust", slotIndex:detailCard.slotIndex }); setDetailCard(null); }}
           onDamage={d => dispatchFor(detailCard.side, { action: detailCard.isLegend?"modify_legend_counter":"modify_counter", slotIndex:detailCard.slotIndex, counterType:"damage", delta:d })}
@@ -1016,8 +1208,8 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
           onCardToExile={pile.zone==="graveyard" && pile.isOwn ? i => { dispatch({ action:"graveyard_to_exile", gyIndex:i }); setPile(null); } : null} />
       )}
 
-      {tokenSlot !== null && (
-        <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/70" onClick={() => setTokenSlot(null)}>
+      {tokenModalOpen && (
+        <div className="fixed inset-0 z-[500] flex items-center justify-center bg-black/70" onClick={() => setTokenModalOpen(false)}>
           <div className="bg-neutral-900 border border-neutral-700 rounded-xl p-5 w-64 space-y-3" onClick={e => e.stopPropagation()}>
             <h3 className="font-semibold text-amber-200">Create Token</h3>
             <input className="w-full rounded bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100"
@@ -1025,8 +1217,8 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
             <div className="flex gap-2">
               {["Frontline","Backline"].map(pos => (
                 <button key={pos} onClick={async () => {
-                  await dispatch({ action:"add_token", slotIndex:tokenSlot, tokenName, position:pos });
-                  setTokenSlot(null);
+                  await dispatch({ action:"add_token", tokenName, position:pos });
+                  setTokenModalOpen(false);
                 }} className="flex-1 py-2 rounded bg-neutral-800 hover:bg-neutral-700 text-sm transition text-neutral-200">{pos}</button>
               ))}
             </div>
@@ -1034,9 +1226,23 @@ function Playmat({ room, mySlot, playerId, roomId, onRoomUpdate }) {
         </div>
       )}
 
-      {/* Alt-zoom overlay */}
-      {altHeld && zoomInfo && (
+      {/* Hover-zoom overlay (1s delay, or instant with Alt/Ctrl; scroll to scale) */}
+      {zoomInfo && (
         <CardZoom card={zoomInfo.card} bfSlot={zoomInfo.bfSlot} pos={zoomPos} scale={zoomScale} />
+      )}
+
+      {/* Drag ghost */}
+      {dragGhost?.card && (
+        <div className="fixed pointer-events-none z-[800] opacity-90 transition-none select-none"
+          style={{ left: ghostPos.x - 36, top: ghostPos.y - 50 }}>
+          <div className="w-[72px] rounded-lg border border-amber-400/80 bg-neutral-800 shadow-2xl overflow-hidden" style={{ transform: "rotate(3deg) scale(1.05)" }}>
+            <div className="h-1 w-full" style={{ background: TYPE_COLORS[dragGhost.card.type] || "#888" }} />
+            <div className="p-1">
+              <p className="text-[9px] font-semibold text-amber-200 leading-tight line-clamp-2">{dragGhost.card.name}</p>
+              <p className="text-[7px] text-neutral-500 truncate">{dragGhost.card.race || dragGhost.card.type}</p>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
