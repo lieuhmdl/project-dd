@@ -382,6 +382,7 @@ function JoinScreen({ onJoined }) {
     <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-6">
       <div className="bg-neutral-900 border border-neutral-700 rounded-2xl shadow-2xl p-8 w-full max-w-md space-y-6">
         <div className="text-center">
+          <a href="/" className="inline-block text-xs text-neutral-600 hover:text-neutral-400 transition mb-4">← Card Builder</a>
           <div className="text-4xl mb-3">🃏</div>
           <h1 className="text-2xl font-bold text-amber-200">Partyfall Live Play</h1>
           <p className="text-sm text-neutral-400 mt-1">1v1 online tabletop · anonymous session</p>

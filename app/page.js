@@ -2070,6 +2070,10 @@ export default function Page() {
           )}
         </div>
 
+        <a href="/play" className="flex items-center gap-2 rounded-md px-3 py-2 text-sm font-semibold text-emerald-300 hover:bg-emerald-900/30 border border-emerald-700/40 hover:border-emerald-500/60 transition mb-1">
+          <span>⚔</span> Live Play
+        </a>
+
         <button onClick={() => switchView("Deckbuilder")} className={"rounded-md px-3 py-2 text-sm text-left transition font-semibold " + (view === "Deckbuilder" ? "bg-violet-800/40 text-amber-200 border border-violet-600/50" : "hover:bg-neutral-800 text-neutral-300")}>
           Deckbuilder
         </button>
