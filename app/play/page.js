@@ -381,12 +381,6 @@ function JoinScreen({ onJoined }) {
   return (
     <div className="min-h-screen bg-neutral-950 flex items-center justify-center p-6">
       <div className="bg-neutral-900 border border-neutral-700 rounded-2xl shadow-2xl p-8 w-full max-w-md space-y-6">
-        <div className="text-center">
-          <a href="/" className="inline-block text-xs text-neutral-600 hover:text-neutral-400 transition mb-4">← Card Builder</a>
-          <div className="text-4xl mb-3">🃏</div>
-          <h1 className="text-2xl font-bold text-amber-200">Partyfall Live Play</h1>
-          <p className="text-sm text-neutral-400 mt-1">1v1 online tabletop · anonymous session</p>
-        </div>
         <div>
           <label className="block text-xs uppercase tracking-wider text-neutral-400 mb-1">Your Name</label>
           <input className="w-full rounded-lg bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-amber-500/60"
@@ -398,9 +392,7 @@ function JoinScreen({ onJoined }) {
           className="w-full py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-semibold transition text-sm">
           {busy ? "…" : "Create Room"}
         </button>
-        <div className="relative flex items-center gap-2">
-          <div className="flex-grow border-t border-neutral-700" /><span className="text-xs text-neutral-600">or join / reconnect</span><div className="flex-grow border-t border-neutral-700" />
-        </div>
+        <div className="border-t border-neutral-800" />
         <div className="flex gap-2">
           <input className="flex-grow rounded-lg bg-neutral-800 border border-neutral-700 px-3 py-2 text-sm text-neutral-100 uppercase placeholder-neutral-500 focus:outline-none focus:ring-2 focus:ring-amber-500/60"
             value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="ROOM CODE" maxLength={6}
